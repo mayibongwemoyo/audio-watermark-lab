@@ -1,12 +1,25 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+
+import Header from "@/components/layout/Header";
+import Footer from "@/components/layout/Footer";
+import HeroSection from "@/components/hero/HeroSection";
+import AudioUploader from "@/components/upload/AudioUploader";
+import WatermarkControls from "@/components/watermark/WatermarkControls";
+import AnalysisSection from "@/components/analysis/AnalysisSection";
+import AboutSection from "@/components/about/AboutSection";
 
 const Index = () => {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-      <div className="text-center">
-        <h1 className="text-4xl font-bold mb-4">Welcome to Your Blank App</h1>
-        <p className="text-xl text-gray-600">Start building your amazing project here!</p>
-      </div>
+    <div className="relative min-h-screen w-full overflow-x-hidden">
+      <div className="grain-overlay" />
+      <Header />
+      <main>
+        <HeroSection />
+        <AudioUploader />
+        <WatermarkControls />
+        <AnalysisSection />
+        <AboutSection />
+      </main>
+      <Footer />
     </div>
   );
 };
