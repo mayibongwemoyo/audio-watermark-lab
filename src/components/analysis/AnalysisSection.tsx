@@ -1,10 +1,9 @@
-
 import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
-import { BarChart, WaveSine, FileDown, Lock, BarChart2, Check, Info } from "lucide-react";
+import { BarChart, Waves, FileDown, Lock, BarChart2, Check, Info } from "lucide-react";
 import { BarChart as ReBarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 const AnalysisSection = () => {
@@ -166,7 +165,7 @@ const AnalysisSection = () => {
                 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="bg-black/5 dark:bg-white/5 p-4 rounded-lg flex flex-col items-center text-center">
-                    <WaveSine size={30} className="mb-2 text-blue-500" />
+                    <Waves size={30} className="mb-2 text-blue-500" />
                     <h3 className="font-medium mb-1">PCA Method</h3>
                     <p className="text-sm text-black/60 dark:text-white/60 mb-2">
                       Dynamic band selection

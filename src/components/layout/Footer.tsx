@@ -1,5 +1,5 @@
 
-import { GitHub } from "lucide-react";
+import { Github } from "lucide-react";
 
 const Footer = () => {
   return (
@@ -27,7 +27,7 @@ const Footer = () => {
               rel="noopener noreferrer"
               className="text-xs flex items-center gap-1 text-muted-foreground hover:text-black dark:hover:text-white transition-colors"
             >
-              <GitHub size={14} />
+              <Github size={14} />
               <span>Source Code</span>
             </a>
           </div>
