@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -5,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { BarChart, Waves, FileDown, Lock, BarChart2, Check, Info } from "lucide-react";
 import { BarChart as ReBarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import MethodComparisonChart from "@/components/comparison/MethodComparisonChart";
 
 const AnalysisSection = () => {
   const [activeTab, setActiveTab] = useState("metrics");
@@ -15,12 +17,6 @@ const AnalysisSection = () => {
     { name: 'Noise', watermark1: 0.05, watermark2: 0.08, watermark3: 0.12 },
     { name: 'MP3', watermark1: 0.12, watermark2: 0.18, watermark3: 0.25 },
     { name: 'Resample', watermark1: 0.08, watermark2: 0.15, watermark3: 0.22 },
-  ];
-  
-  const comparisonData = [
-    { name: 'PCA', BER: 0.08, SNR: 35 },
-    { name: 'LSB', BER: 0.22, SNR: 30 },
-    { name: 'SS', BER: 0.15, SNR: 32 },
   ];
   
   return (
@@ -131,37 +127,7 @@ const AnalysisSection = () => {
               </TabsContent>
               
               <TabsContent value="comparison" className="space-y-6">
-                <div className="bg-black/5 dark:bg-white/5 rounded-lg p-4">
-                  <h3 className="font-medium mb-3">H1: PCA vs Traditional Methods</h3>
-                  <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <ReBarChart
-                        data={comparisonData}
-                        margin={{
-                          top: 5,
-                          right: 30,
-                          left: 20,
-                          bottom: 5,
-                        }}
-                      >
-                        <CartesianGrid strokeDasharray="3 3" stroke="#55555522" />
-                        <XAxis dataKey="name" />
-                        <YAxis />
-                        <Tooltip 
-                          contentStyle={{ 
-                            backgroundColor: 'rgba(255, 255, 255, 0.8)', 
-                            borderRadius: '8px',
-                            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
-                            borderColor: 'rgba(0, 0, 0, 0.1)'
-                          }} 
-                        />
-                        <Legend />
-                        <Bar dataKey="BER" name="Bit Error Rate" fill="#ff6b6b" radius={[4, 4, 0, 0]} />
-                        <Bar dataKey="SNR" name="Signal-to-Noise Ratio" fill="#5a91e3" radius={[4, 4, 0, 0]} />
-                      </ReBarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
+                <MethodComparisonChart />
                 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="bg-black/5 dark:bg-white/5 p-4 rounded-lg flex flex-col items-center text-center">
@@ -179,26 +145,26 @@ const AnalysisSection = () => {
                   
                   <div className="bg-black/5 dark:bg-white/5 p-4 rounded-lg flex flex-col items-center text-center">
                     <BarChart size={30} className="mb-2 text-orange-500" />
-                    <h3 className="font-medium mb-1">LSB Method</h3>
+                    <h3 className="font-medium mb-1">Traditional Methods</h3>
                     <p className="text-sm text-black/60 dark:text-white/60 mb-2">
-                      Basic bit replacement
+                      SFA, SDA, PFB techniques
                     </p>
                     <div className="mt-auto">
                       <span className="text-xs px-2 py-1 bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-100 rounded-full">
-                        Limited robustness
+                        Variable robustness
                       </span>
                     </div>
                   </div>
                   
                   <div className="bg-black/5 dark:bg-white/5 p-4 rounded-lg flex flex-col items-center text-center">
                     <Lock size={30} className="mb-2 text-purple-500" />
-                    <h3 className="font-medium mb-1">Blockchain</h3>
+                    <h3 className="font-medium mb-1">External Methods</h3>
                     <p className="text-sm text-black/60 dark:text-white/60 mb-2">
-                      External verification
+                      Blockchain & Mobile Cloud
                     </p>
                     <div className="mt-auto">
                       <span className="text-xs px-2 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-100 rounded-full">
-                        High security
+                        External verification
                       </span>
                     </div>
                   </div>
@@ -218,6 +184,7 @@ const AnalysisSection = () => {
                   <ul className="list-disc list-inside space-y-2 text-black/80 dark:text-white/80">
                     <li>H1: PCA-based watermarking provides better robustness than traditional methods</li>
                     <li>H2: Multi-layer embedding maintains detection accuracy even under severe attacks</li>
+                    <li>H3: Our method outperforms external verification techniques in terms of SNR and BER</li>
                   </ul>
                   
                   <div className="mt-6 pt-6 border-t border-black/10 dark:border-white/10">

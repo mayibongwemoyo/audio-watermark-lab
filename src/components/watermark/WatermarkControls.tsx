@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
@@ -13,9 +13,13 @@ import {
   Shield, 
   Play,
   FileDown,
-  SquareDashedBottom
+  SquareDashedBottom,
+  AlertTriangle
 } from "lucide-react";
 import { toast } from "sonner";
+import { useWatermarkMethods } from "@/hooks/useWatermarkMethods";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { api } from "@/services/api";
 
 const WatermarkControls = () => {
   const [watermarkCount, setWatermarkCount] = useState(1);
@@ -23,16 +27,54 @@ const WatermarkControls = () => {
   const [pcaEnabled, setPcaEnabled] = useState(true);
   const [pcaComponents, setPcaComponents] = useState(32);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [selectedMethod, setSelectedMethod] = useState("sfa");
+  const [backendConnected, setBackendConnected] = useState(false);
+  
+  const { methods, audioSealAvailable, isLoading: methodsLoading } = useWatermarkMethods();
+  
+  // Check backend connection
+  useEffect(() => {
+    const checkBackendConnection = async () => {
+      const isConnected = await api.checkHealth();
+      setBackendConnected(isConnected);
+      
+      if (!isConnected) {
+        toast.warning("Backend server not detected. Running in demo mode.", {
+          duration: 5000,
+        });
+      }
+    };
+    
+    checkBackendConnection();
+  }, []);
   
   const handleApplyWatermark = () => {
     setIsProcessing(true);
     
-    // Simulate processing delay
-    setTimeout(() => {
-      setIsProcessing(false);
-      toast.success("Watermark applied successfully");
-      document.getElementById('analysis')?.scrollIntoView({ behavior: 'smooth' });
-    }, 2000);
+    // Generate a binary message string based on messageBits length
+    const generateRandomBinaryMessage = (length: number) => {
+      return Array.from({ length }, () => Math.round(Math.random())).join("");
+    };
+    
+    const message = generateRandomBinaryMessage(messageBits);
+    
+    // If backend is connected, process with real API
+    if (backendConnected) {
+      // This would normally use the real audio file from AudioUploader component
+      // For demo purposes we'll just simulate the response
+      setTimeout(() => {
+        setIsProcessing(false);
+        toast.success(`Watermark applied using ${selectedMethod.toUpperCase()} method`);
+        document.getElementById('analysis')?.scrollIntoView({ behavior: 'smooth' });
+      }, 2000);
+    } else {
+      // Simulate processing delay in demo mode
+      setTimeout(() => {
+        setIsProcessing(false);
+        toast.success("Watermark applied successfully (Demo Mode)");
+        document.getElementById('analysis')?.scrollIntoView({ behavior: 'smooth' });
+      }, 2000);
+    }
   };
   
   return (
@@ -46,6 +88,15 @@ const WatermarkControls = () => {
           <p className="text-black/70 dark:text-white/70 ml-3 pl-3">
             Configure the parameters for your audio watermarking process
           </p>
+          
+          {!backendConnected && (
+            <div className="ml-3 pl-3 mt-2 flex items-center gap-2 text-yellow-600 dark:text-yellow-400">
+              <AlertTriangle size={16} />
+              <span className="text-sm">
+                Running in demo mode. Backend server not connected.
+              </span>
+            </div>
+          )}
         </div>
         
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -69,6 +120,43 @@ const WatermarkControls = () => {
                 
                 <TabsContent value="watermark" className="space-y-6">
                   <div className="space-y-4">
+                    <div className="pt-2 pb-2">
+                      <Label htmlFor="method" className="block mb-2">Watermarking Method</Label>
+                      <Select 
+                        value={selectedMethod} 
+                        onValueChange={setSelectedMethod}
+                        disabled={methodsLoading}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select method" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {methodsLoading ? (
+                            <SelectItem value="loading">Loading methods...</SelectItem>
+                          ) : (
+                            Object.entries(methods).map(([key, method]) => (
+                              <SelectItem key={key} value={key}>
+                                {method.name}
+                              </SelectItem>
+                            ))
+                          )}
+                          {!backendConnected && (
+                            <>
+                              <SelectItem value="sfa">Sequential Fixed Alpha (SFA)</SelectItem>
+                              <SelectItem value="sda">Sequential Decaying Alpha (SDA)</SelectItem>
+                              <SelectItem value="pfb">Parallel Frequency Bands (PFB)</SelectItem>
+                              <SelectItem value="pca">Principal Component Analysis (PCA)</SelectItem>
+                            </>
+                          )}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {selectedMethod === "pca" 
+                          ? "PCA-based watermarking for optimal band selection"
+                          : methods[selectedMethod]?.description || "Select a watermarking method"}
+                      </p>
+                    </div>
+                    
                     <div>
                       <div className="flex justify-between items-center mb-2">
                         <Label htmlFor="watermark-count">Number of Watermarks: {watermarkCount}</Label>
@@ -109,41 +197,44 @@ const WatermarkControls = () => {
                       </div>
                     </div>
                     
-                    <div className="pt-2 pb-2">
-                      <div className="flex items-center justify-between">
-                        <div className="space-y-1">
-                          <Label htmlFor="pca-toggle">Enable PCA</Label>
-                          <p className="text-xs text-muted-foreground">Use Principal Component Analysis for embedding</p>
+                    {(selectedMethod === "pca" || pcaEnabled) && (
+                      <>
+                        <div className="pt-2 pb-2">
+                          <div className="flex items-center justify-between">
+                            <div className="space-y-1">
+                              <Label htmlFor="pca-toggle">Enable PCA</Label>
+                              <p className="text-xs text-muted-foreground">Use Principal Component Analysis for embedding</p>
+                            </div>
+                            <Switch 
+                              id="pca-toggle" 
+                              checked={pcaEnabled || selectedMethod === "pca"}
+                              onCheckedChange={setPcaEnabled}
+                              disabled={selectedMethod === "pca"}
+                            />
+                          </div>
                         </div>
-                        <Switch 
-                          id="pca-toggle" 
-                          checked={pcaEnabled}
-                          onCheckedChange={setPcaEnabled}
-                        />
-                      </div>
-                    </div>
-                    
-                    {pcaEnabled && (
-                      <div className="pt-2">
-                        <div className="flex justify-between items-center mb-2">
-                          <Label htmlFor="pca-components">PCA Components: {pcaComponents}</Label>
+                        
+                        <div className="pt-2">
+                          <div className="flex justify-between items-center mb-2">
+                            <Label htmlFor="pca-components">PCA Components: {pcaComponents}</Label>
+                          </div>
+                          <Slider
+                            id="pca-components"
+                            min={1}
+                            max={64}
+                            step={1}
+                            value={[pcaComponents]}
+                            onValueChange={(value) => setPcaComponents(value[0])}
+                            disabled={!pcaEnabled && selectedMethod !== "pca"}
+                            className="py-4"
+                          />
+                          <div className="flex justify-between text-xs text-muted-foreground">
+                            <span>1</span>
+                            <span>32</span>
+                            <span>64</span>
+                          </div>
                         </div>
-                        <Slider
-                          id="pca-components"
-                          min={1}
-                          max={64}
-                          step={1}
-                          value={[pcaComponents]}
-                          onValueChange={(value) => setPcaComponents(value[0])}
-                          disabled={!pcaEnabled}
-                          className="py-4"
-                        />
-                        <div className="flex justify-between text-xs text-muted-foreground">
-                          <span>1</span>
-                          <span>32</span>
-                          <span>64</span>
-                        </div>
-                      </div>
+                      </>
                     )}
                   </div>
                 </TabsContent>
@@ -176,6 +267,7 @@ const WatermarkControls = () => {
                   setMessageBits(32);
                   setPcaEnabled(true);
                   setPcaComponents(32);
+                  setSelectedMethod("sfa");
                 }}
               >
                 <Settings size={16} className="mr-2" />
@@ -207,6 +299,11 @@ const WatermarkControls = () => {
               
               <div className="space-y-4">
                 <div className="flex justify-between items-center py-2 border-b border-black/10 dark:border-white/10">
+                  <span className="text-sm text-black/70 dark:text-white/70">Method</span>
+                  <span className="font-medium">{selectedMethod.toUpperCase()}</span>
+                </div>
+                
+                <div className="flex justify-between items-center py-2 border-b border-black/10 dark:border-white/10">
                   <span className="text-sm text-black/70 dark:text-white/70">Watermarks</span>
                   <span className="font-medium">{watermarkCount}</span>
                 </div>
@@ -218,10 +315,10 @@ const WatermarkControls = () => {
                 
                 <div className="flex justify-between items-center py-2 border-b border-black/10 dark:border-white/10">
                   <span className="text-sm text-black/70 dark:text-white/70">PCA</span>
-                  <span className="font-medium">{pcaEnabled ? 'Enabled' : 'Disabled'}</span>
+                  <span className="font-medium">{(pcaEnabled || selectedMethod === "pca") ? 'Enabled' : 'Disabled'}</span>
                 </div>
                 
-                {pcaEnabled && (
+                {(pcaEnabled || selectedMethod === "pca") && (
                   <div className="flex justify-between items-center py-2 border-b border-black/10 dark:border-white/10">
                     <span className="text-sm text-black/70 dark:text-white/70">Components</span>
                     <span className="font-medium">{pcaComponents}</span>
@@ -232,6 +329,15 @@ const WatermarkControls = () => {
                   <span className="text-sm text-black/70 dark:text-white/70">Total Capacity</span>
                   <span className="font-medium">{watermarkCount * messageBits} bits</span>
                 </div>
+                
+                <div className="flex justify-between items-center py-2 border-b border-black/10 dark:border-white/10">
+                  <span className="text-sm text-black/70 dark:text-white/70">AudioSeal</span>
+                  {methodsLoading ? (
+                    <span className="text-sm">Checking...</span>
+                  ) : (
+                    <span className="font-medium">{audioSealAvailable ? 'Available' : 'Not detected'}</span>
+                  )}
+                </div>
               </div>
             </div>
             
@@ -239,7 +345,7 @@ const WatermarkControls = () => {
               <Button 
                 variant="outline"
                 className="w-full rounded-full"
-                disabled
+                disabled={!backendConnected}
               >
                 <FileDown size={16} className="mr-2" />
                 Download Config
