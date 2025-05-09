@@ -75,9 +75,9 @@ const MethodComparisonChart = () => {
       if (pcaMethod && blockchainMethod && mcMethod) {
         switch(lowerMetric) {
           case "snr":
-            value.PCA = pcaMethod.snr || 0;
-            value.Blockchain = blockchainMethod.snr || 0;
-            value["Mobile Cloud"] = mcMethod.snr || 0;
+            value.PCA = Number(pcaMethod.snr || 0);
+            value.Blockchain = Number(blockchainMethod.snr || 0);
+            value["Mobile Cloud"] = Number(mcMethod.snr || 0);
             break;
           case "detection":
             // Ensure we're working with numbers by using Number() and providing fallbacks
@@ -93,9 +93,9 @@ const MethodComparisonChart = () => {
             value["Mobile Cloud"] = (1 - Number(mcMethod.ber || 0)) * 100;
             break;
           case "robustness":
-            value.PCA = pcaMethod.robustness || 0;
-            value.Blockchain = blockchainMethod.robustness || 0;
-            value["Mobile Cloud"] = mcMethod.robustness || 0;
+            value.PCA = Number(pcaMethod.robustness || 0);
+            value.Blockchain = Number(blockchainMethod.robustness || 0);
+            value["Mobile Cloud"] = Number(mcMethod.robustness || 0);
             break;
         }
       }
