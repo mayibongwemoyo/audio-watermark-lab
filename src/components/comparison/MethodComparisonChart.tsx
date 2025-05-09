@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -80,14 +79,11 @@ const MethodComparisonChart = () => {
             value["Mobile Cloud"] = Number(mcMethod.snr || 0);
             break;
           case "detection":
-            // Ensure we're working with numbers by using Number() and providing fallbacks
             value.PCA = Number(pcaMethod.detection_probability || 0) * 100;
             value.Blockchain = Number(blockchainMethod.detection_probability || 0) * 100;
             value["Mobile Cloud"] = Number(mcMethod.detection_probability || 0) * 100;
             break;
           case "ber":
-            // Lower BER is better, so we invert for visualization
-            // Make sure we have numbers by using Number() and providing fallbacks
             value.PCA = (1 - Number(pcaMethod.ber || 0)) * 100;
             value.Blockchain = (1 - Number(blockchainMethod.ber || 0)) * 100;
             value["Mobile Cloud"] = (1 - Number(mcMethod.ber || 0)) * 100;
@@ -109,10 +105,10 @@ const MethodComparisonChart = () => {
     return [...barData].sort((a, b) => {
       // For BER, lower is better
       if (metric === "ber") {
-        return a.value - b.value;
+        return Number(a.value) - Number(b.value);
       }
       // For others, higher is better
-      return b.value - a.value;
+      return Number(b.value) - Number(a.value);
     });
   };
   
