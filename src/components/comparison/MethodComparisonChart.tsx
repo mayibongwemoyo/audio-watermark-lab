@@ -64,6 +64,7 @@ const MethodComparisonChart = () => {
       const blockchainMethod = comparisons.find(c => c.name === "Blockchain");
       const mcMethod = comparisons.find(c => c.name === "Mobile Cloud");
       
+      // Initialize with default values of 0
       let value: RadarData = { 
         subject: metric, 
         PCA: 0, 
@@ -74,25 +75,27 @@ const MethodComparisonChart = () => {
       if (pcaMethod && blockchainMethod && mcMethod) {
         switch(lowerMetric) {
           case "snr":
-            value.PCA = pcaMethod.snr;
-            value.Blockchain = blockchainMethod.snr;
-            value["Mobile Cloud"] = mcMethod.snr;
+            value.PCA = pcaMethod.snr || 0;
+            value.Blockchain = blockchainMethod.snr || 0;
+            value["Mobile Cloud"] = mcMethod.snr || 0;
             break;
           case "detection":
-            value.PCA = pcaMethod.detection_probability * 100;
-            value.Blockchain = blockchainMethod.detection_probability * 100;
-            value["Mobile Cloud"] = mcMethod.detection_probability * 100;
+            // Ensure we're working with numbers by using Number() and providing fallbacks
+            value.PCA = Number(pcaMethod.detection_probability || 0) * 100;
+            value.Blockchain = Number(blockchainMethod.detection_probability || 0) * 100;
+            value["Mobile Cloud"] = Number(mcMethod.detection_probability || 0) * 100;
             break;
           case "ber":
             // Lower BER is better, so we invert for visualization
-            value.PCA = (1 - pcaMethod.ber) * 100;
-            value.Blockchain = (1 - blockchainMethod.ber) * 100;
-            value["Mobile Cloud"] = (1 - mcMethod.ber) * 100;
+            // Make sure we have numbers by using Number() and providing fallbacks
+            value.PCA = (1 - Number(pcaMethod.ber || 0)) * 100;
+            value.Blockchain = (1 - Number(blockchainMethod.ber || 0)) * 100;
+            value["Mobile Cloud"] = (1 - Number(mcMethod.ber || 0)) * 100;
             break;
           case "robustness":
-            value.PCA = pcaMethod.robustness;
-            value.Blockchain = blockchainMethod.robustness;
-            value["Mobile Cloud"] = mcMethod.robustness;
+            value.PCA = pcaMethod.robustness || 0;
+            value.Blockchain = blockchainMethod.robustness || 0;
+            value["Mobile Cloud"] = mcMethod.robustness || 0;
             break;
         }
       }
