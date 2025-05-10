@@ -15,15 +15,24 @@ interface MethodsResponse {
   methods: Record<string, WatermarkMethod>;
 }
 
+interface WatermarkEmbedResult {
+  step: number;
+  method: string;
+  message_embedded: string;
+  snr_db: number;
+  detection_probability: number;
+  ber: number;
+  info: string;
+}
+
 interface WatermarkEmbedResponse {
   status: string;
   action: string;
   method: string;
   message_embedded: string;
-  snr_db: number;
-  detection_probability: number;
-  info: string;
+  watermark_count: number;
   processed_audio_url: string;
+  results: WatermarkEmbedResult[];
 }
 
 interface WatermarkDetectResponse {
@@ -43,6 +52,24 @@ export interface MethodComparison {
   ber: number;
   detection_probability: number;
   robustness: number;
+}
+
+export interface ProcessAudioParams {
+  audioFile: File;
+  action: "embed" | "detect";
+  method: string;
+  message: string;
+  watermarkCount?: number;
+  pcaComponents?: number;
+}
+
+export interface WatermarkResults {
+  snr_db: number;
+  ber: number;
+  detection_probability: number;
+  processed_audio_url: string;
+  method: string;
+  step_results: WatermarkEmbedResult[];
 }
 
 export const api = {
@@ -67,6 +94,26 @@ export const api = {
             name: "Placeholder",
             description: "Fallback implementation",
             available: true
+          },
+          sfa: {
+            name: "Sequential Fixed Alpha (SFA)",
+            description: "Embeds watermark with fixed strength parameter alpha",
+            available: true
+          },
+          sda: {
+            name: "Sequential Decaying Alpha (SDA)",
+            description: "Embeds watermark with decaying strength parameter alpha",
+            available: true
+          },
+          pfb: {
+            name: "Parallel Frequency Bands (PFB)",
+            description: "Embeds watermark in parallel across different frequency bands",
+            available: true
+          },
+          pca: {
+            name: "Principal Component Analysis (PCA)",
+            description: "Dynamic band selection using PCA for optimal watermark embedding",
+            available: true
           }
         }
       };
@@ -90,18 +137,22 @@ export const api = {
   /**
    * Process audio for watermarking or detection
    */
-  processAudio: async (
-    audioFile: File,
-    action: "embed" | "detect",
-    method: string,
-    message: string
-  ): Promise<WatermarkEmbedResponse | WatermarkDetectResponse> => {
+  processAudio: async (params: ProcessAudioParams): Promise<WatermarkEmbedResponse | WatermarkDetectResponse> => {
     try {
       const formData = new FormData();
-      formData.append("audio_file", audioFile);
-      formData.append("action", action);
-      formData.append("method", method);
-      formData.append("message", message);
+      formData.append("audio_file", params.audioFile);
+      formData.append("action", params.action);
+      formData.append("method", params.method);
+      formData.append("message", params.message);
+      
+      // Add optional parameters if provided
+      if (params.watermarkCount) {
+        formData.append("watermark_count", params.watermarkCount.toString());
+      }
+      
+      if (params.pcaComponents) {
+        formData.append("pca_components", params.pcaComponents.toString());
+      }
       
       const response = await fetch(`${API_URL}/process_audio`, {
         method: "POST",

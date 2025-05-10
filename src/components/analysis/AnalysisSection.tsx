@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { useContext, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -7,17 +7,38 @@ import { Progress } from "@/components/ui/progress";
 import { BarChart, Waves, FileDown, Lock, BarChart2, Check, Info } from "lucide-react";
 import { BarChart as ReBarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import MethodComparisonChart from "@/components/comparison/MethodComparisonChart";
+import { ResultsContext } from "@/contexts/ResultsContext";
 
 const AnalysisSection = () => {
   const [activeTab, setActiveTab] = useState("metrics");
+  const { results } = useContext(ResultsContext);
   
-  // Sample data for visualization
-  const berData = [
+  // Generate BER data for visualization if results are available
+  const berData = results ? results.step_results.map((result, index) => ({
+    name: `Step ${result.step}`,
+    value: result.ber,
+    display: (result.ber * 100).toFixed(1) + '%'
+  })) : [
+    // Sample data if no results available
     { name: 'Original', watermark1: 0, watermark2: 0, watermark3: 0 },
     { name: 'Noise', watermark1: 0.05, watermark2: 0.08, watermark3: 0.12 },
     { name: 'MP3', watermark1: 0.12, watermark2: 0.18, watermark3: 0.25 },
     { name: 'Resample', watermark1: 0.08, watermark2: 0.15, watermark3: 0.22 },
   ];
+  
+  // Generate SNR data for visualization if results are available
+  const snrData = results ? results.step_results.map((result, index) => ({
+    name: `Step ${result.step}`,
+    value: result.snr_db,
+    display: result.snr_db.toFixed(2) + ' dB'
+  })) : [];
+  
+  // Generate detection probability data for visualization if results are available
+  const detectionData = results ? results.step_results.map((result, index) => ({
+    name: `Step ${result.step}`,
+    value: result.detection_probability * 100,
+    display: (result.detection_probability * 100).toFixed(1) + '%'
+  })) : [];
   
   return (
     <section id="analysis" className="py-24 px-6 md:px-10">
@@ -55,34 +76,104 @@ const AnalysisSection = () => {
                   <div className="space-y-2">
                     <div className="flex justify-between items-center">
                       <span className="text-sm">BER (Bit Error Rate)</span>
-                      <span className="text-sm font-medium">8.3%</span>
+                      <span className="text-sm font-medium">
+                        {results ? (results.ber * 100).toFixed(1) + '%' : '8.3%'}
+                      </span>
                     </div>
-                    <Progress value={8.3} className="h-2" />
+                    <Progress value={results ? 100 - (results.ber * 100) : 91.7} className="h-2" />
                   </div>
                   
                   <div className="space-y-2">
                     <div className="flex justify-between items-center">
                       <span className="text-sm">SNR (Signal-to-Noise)</span>
-                      <span className="text-sm font-medium">35.7 dB</span>
+                      <span className="text-sm font-medium">
+                        {results ? results.snr_db.toFixed(1) + ' dB' : '35.7 dB'}
+                      </span>
                     </div>
-                    <Progress value={85} className="h-2" />
+                    <Progress value={results ? Math.min(results.snr_db / 60 * 100, 100) : 85} className="h-2" />
                   </div>
                   
                   <div className="space-y-2">
                     <div className="flex justify-between items-center">
-                      <span className="text-sm">PESQ</span>
-                      <span className="text-sm font-medium">4.2</span>
+                      <span className="text-sm">Detection Probability</span>
+                      <span className="text-sm font-medium">
+                        {results ? (results.detection_probability * 100).toFixed() + '%' : '92%'}
+                      </span>
                     </div>
-                    <Progress value={84} className="h-2" />
+                    <Progress value={results ? results.detection_probability * 100 : 92} className="h-2" />
                   </div>
                 </div>
                 
                 <div className="bg-black/5 dark:bg-white/5 rounded-lg p-4">
-                  <h3 className="font-medium mb-3">Watermark Robustness</h3>
+                  <h3 className="font-medium mb-3">Watermark Performance</h3>
                   <div className="h-64">
                     <ResponsiveContainer width="100%" height="100%">
                       <ReBarChart
-                        data={berData}
+                        data={results ? snrData : []}
+                        margin={{
+                          top: 5,
+                          right: 30,
+                          left: 20,
+                          bottom: 5,
+                        }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" stroke="#55555522" />
+                        <XAxis dataKey="name" />
+                        <YAxis label={{ value: 'SNR (dB)', angle: -90, position: 'insideLeft' }} />
+                        <Tooltip 
+                          contentStyle={{ 
+                            backgroundColor: 'rgba(255, 255, 255, 0.8)', 
+                            borderRadius: '8px',
+                            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
+                            borderColor: 'rgba(0, 0, 0, 0.1)'
+                          }}
+                          formatter={(value, name, props) => [props.payload.display, 'SNR']} 
+                        />
+                        <Legend />
+                        <Bar dataKey="value" name="SNR" fill="#0066ff" radius={[4, 4, 0, 0]} />
+                      </ReBarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+                
+                <div className="bg-black/5 dark:bg-white/5 rounded-lg p-4">
+                  <h3 className="font-medium mb-3">Detection Results</h3>
+                  <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ReBarChart
+                        data={results ? detectionData : []}
+                        margin={{
+                          top: 5,
+                          right: 30,
+                          left: 20,
+                          bottom: 5,
+                        }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" stroke="#55555522" />
+                        <XAxis dataKey="name" />
+                        <YAxis label={{ value: 'Probability (%)', angle: -90, position: 'insideLeft' }} />
+                        <Tooltip 
+                          contentStyle={{ 
+                            backgroundColor: 'rgba(255, 255, 255, 0.8)', 
+                            borderRadius: '8px',
+                            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
+                            borderColor: 'rgba(0, 0, 0, 0.1)'
+                          }} 
+                          formatter={(value, name, props) => [props.payload.display, 'Detection Probability']} 
+                        />
+                        <Legend />
+                        <Bar dataKey="value" name="Detection" fill="#00aaff" radius={[4, 4, 0, 0]} />
+                      </ReBarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+                
+                <div className="bg-black/5 dark:bg-white/5 rounded-lg p-4">
+                  <h3 className="font-medium mb-3">Bit Error Rate</h3>
+                  <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ReBarChart
+                        data={results ? berData : []}
                         margin={{
                           top: 5,
                           right: 30,
@@ -100,11 +191,10 @@ const AnalysisSection = () => {
                             boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
                             borderColor: 'rgba(0, 0, 0, 0.1)'
                           }} 
+                          formatter={(value, name, props) => [props.payload.display, 'BER']} 
                         />
                         <Legend />
-                        <Bar dataKey="watermark1" name="Watermark 1" fill="#0066ff" radius={[4, 4, 0, 0]} />
-                        <Bar dataKey="watermark2" name="Watermark 2" fill="#00aaff" radius={[4, 4, 0, 0]} />
-                        <Bar dataKey="watermark3" name="Watermark 3" fill="#00ddff" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="value" name="BER" fill="#ff6b6b" radius={[4, 4, 0, 0]} />
                       </ReBarChart>
                     </ResponsiveContainer>
                   </div>
@@ -113,15 +203,23 @@ const AnalysisSection = () => {
                 <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
                   <div className="flex items-center gap-2">
                     <Check size={20} className="text-green-500" />
-                    <span className="font-medium">All watermarks successfully detected</span>
+                    <span className="font-medium">
+                      {results ? `Watermarking with ${results.method.toUpperCase()} method successful` : 'All watermarks successfully detected'}
+                    </span>
                   </div>
                   <Button 
                     variant="outline"
                     size="sm"
                     className="rounded-full"
+                    disabled={!results?.processed_audio_url}
+                    onClick={() => {
+                      if (results?.processed_audio_url) {
+                        window.open(`http://localhost:5000${results.processed_audio_url}`, '_blank');
+                      }
+                    }}
                   >
                     <FileDown size={16} className="mr-2" />
-                    Export Results
+                    {results?.processed_audio_url ? 'Download Watermarked Audio' : 'Export Results'}
                   </Button>
                 </div>
               </TabsContent>

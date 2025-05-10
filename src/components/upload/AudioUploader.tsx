@@ -1,19 +1,20 @@
 
-import { useState, useRef } from "react";
+import { useState, useRef, useContext } from "react";
 import { Upload, Mic, X, Play, Pause, Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
+import { AudioContext } from "@/contexts/AudioContext";
 
 const AudioUploader = () => {
   const [isDragging, setIsDragging] = useState(false);
-  const [audioFile, setAudioFile] = useState<File | null>(null);
-  const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<BlobPart[]>([]);
+  
+  const { audioFile, audioUrl, setAudioFile, setAudioUrl, clearAudio } = useContext(AudioContext);
   
   const handleDragEnter = (e: React.DragEvent) => {
     e.preventDefault();
@@ -55,19 +56,6 @@ const AudioUploader = () => {
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       handleFiles(e.target.files);
-    }
-  };
-  
-  const clearAudio = () => {
-    if (audioUrl) {
-      URL.revokeObjectURL(audioUrl);
-    }
-    setAudioFile(null);
-    setAudioUrl(null);
-    setIsPlaying(false);
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.currentTime = 0;
     }
   };
   

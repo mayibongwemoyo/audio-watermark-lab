@@ -1,5 +1,5 @@
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useContext } from "react";
 import { Card } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
@@ -19,7 +19,9 @@ import {
 import { toast } from "sonner";
 import { useWatermarkMethods } from "@/hooks/useWatermarkMethods";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { api } from "@/services/api";
+import { api, ProcessAudioParams, WatermarkEmbedResponse } from "@/services/api";
+import { AudioContext } from "@/contexts/AudioContext";
+import { ResultsContext } from "@/contexts/ResultsContext";
 
 const WatermarkControls = () => {
   const [watermarkCount, setWatermarkCount] = useState(1);
@@ -31,6 +33,8 @@ const WatermarkControls = () => {
   const [backendConnected, setBackendConnected] = useState(false);
   
   const { methods, audioSealAvailable, isLoading: methodsLoading } = useWatermarkMethods();
+  const { audioFile } = useContext(AudioContext);
+  const { setResults } = useContext(ResultsContext);
   
   // Check backend connection
   useEffect(() => {
@@ -48,7 +52,13 @@ const WatermarkControls = () => {
     checkBackendConnection();
   }, []);
   
-  const handleApplyWatermark = () => {
+  const handleApplyWatermark = async () => {
+    if (!audioFile) {
+      toast.error("Please upload an audio file first");
+      document.getElementById('upload')?.scrollIntoView({ behavior: 'smooth' });
+      return;
+    }
+    
     setIsProcessing(true);
     
     // Generate a binary message string based on messageBits length
@@ -58,22 +68,62 @@ const WatermarkControls = () => {
     
     const message = generateRandomBinaryMessage(messageBits);
     
-    // If backend is connected, process with real API
-    if (backendConnected) {
-      // This would normally use the real audio file from AudioUploader component
-      // For demo purposes we'll just simulate the response
-      setTimeout(() => {
-        setIsProcessing(false);
-        toast.success(`Watermark applied using ${selectedMethod.toUpperCase()} method`);
+    try {
+      // If backend is connected, process with real API
+      if (backendConnected) {
+        const params: ProcessAudioParams = {
+          audioFile,
+          action: "embed",
+          method: pcaEnabled && selectedMethod !== "pca" ? "pca" : selectedMethod,
+          message,
+          watermarkCount,
+          pcaComponents
+        };
+        
+        const response = await api.processAudio(params) as WatermarkEmbedResponse;
+        
+        // Set results in context to be used by the analysis section
+        setResults({
+          snr_db: response.results[response.results.length - 1].snr_db,
+          ber: response.results[response.results.length - 1].ber,
+          detection_probability: response.results[response.results.length - 1].detection_probability,
+          processed_audio_url: response.processed_audio_url,
+          method: response.method,
+          step_results: response.results
+        });
+        
+        toast.success(`Watermark applied using ${response.method.toUpperCase()} method`);
         document.getElementById('analysis')?.scrollIntoView({ behavior: 'smooth' });
-      }, 2000);
-    } else {
-      // Simulate processing delay in demo mode
-      setTimeout(() => {
-        setIsProcessing(false);
-        toast.success("Watermark applied successfully (Demo Mode)");
-        document.getElementById('analysis')?.scrollIntoView({ behavior: 'smooth' });
-      }, 2000);
+      } else {
+        // Simulate processing delay in demo mode
+        setTimeout(() => {
+          setResults({
+            snr_db: 35.7,
+            ber: 0.083,
+            detection_probability: 0.92,
+            processed_audio_url: "",
+            method: selectedMethod,
+            step_results: [
+              {
+                step: 1,
+                method: selectedMethod,
+                message_embedded: message,
+                snr_db: 35.7,
+                detection_probability: 0.92,
+                ber: 0.083,
+                info: `Watermark embedded using ${selectedMethod.toUpperCase()} method (Demo Mode)`
+              }
+            ]
+          });
+          toast.success("Watermark applied successfully (Demo Mode)");
+          document.getElementById('analysis')?.scrollIntoView({ behavior: 'smooth' });
+        }, 2000);
+      }
+    } catch (error) {
+      console.error("Error applying watermark:", error);
+      toast.error("Failed to apply watermark");
+    } finally {
+      setIsProcessing(false);
     }
   };
   
@@ -276,7 +326,7 @@ const WatermarkControls = () => {
               <Button 
                 className="rounded-full flex-1 bg-black hover:bg-black/90 text-white dark:bg-white dark:text-black dark:hover:bg-white/90"
                 onClick={handleApplyWatermark}
-                disabled={isProcessing}
+                disabled={isProcessing || !audioFile}
               >
                 {isProcessing ? (
                   <div className="flex items-center">
@@ -337,6 +387,11 @@ const WatermarkControls = () => {
                   ) : (
                     <span className="font-medium">{audioSealAvailable ? 'Available' : 'Not detected'}</span>
                   )}
+                </div>
+                
+                <div className="flex justify-between items-center py-2 border-b border-black/10 dark:border-white/10">
+                  <span className="text-sm text-black/70 dark:text-white/70">Audio File</span>
+                  <span className="font-medium">{audioFile ? 'Ready' : 'Not selected'}</span>
                 </div>
               </div>
             </div>

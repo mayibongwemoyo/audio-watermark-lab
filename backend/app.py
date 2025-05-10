@@ -8,6 +8,7 @@ import torch
 import torchaudio
 import soundfile as sf
 from werkzeug.utils import secure_filename
+from scipy import stats
 
 # Initialize Flask application
 app = Flask(__name__)
@@ -21,6 +22,10 @@ CORS(app)
 
 # Create uploads directory if it doesn't exist
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
+# Constants for watermarking
+NUM_WATERMARKS = 4
+NUM_AUDIOS_PER_METHOD = 5
 
 # Try to import AudioSeal for actual watermarking
 try:
@@ -105,8 +110,33 @@ def save_audio(audio_tensor, filename, sample_rate=SAMPLE_RATE):
         return None
 
 
+# Implementation of preprocessing from notebook
+def preprocess_audio_from_tensor(audio, sr):
+    """Convert audio to standard format: (1, 1, T) @ 16kHz"""
+    # Convert numpy arrays to tensor if needed
+    if isinstance(audio, np.ndarray):
+        audio = torch.from_numpy(audio).float()
+
+    # Ensure 3D shape: (batch=1, channels=1, time)
+    if audio.dim() == 1:
+        audio = audio.unsqueeze(0).unsqueeze(0)  # (1, 1, T)
+    elif audio.dim() == 2:
+        audio = audio.unsqueeze(0)  # (1, C, T)
+
+    # Convert to mono if needed
+    if audio.shape[1] > 1:
+        audio = audio.mean(dim=1, keepdim=True)
+
+    # Resample to 16kHz if needed
+    if sr != 16000:
+        resampler = torchaudio.transforms.Resample(sr, 16000)
+        audio = resampler(audio)
+
+    return audio
+
+
 # Watermarking Methods Implementation
-def embed_sfa(audio, sr, message_bits=None, alpha=0.3):
+def embed_sfa(audio, sr, message_bits=None, alpha=0.3, step=0):
     """
     Sequential Fixed Alpha watermarking method
     
@@ -138,6 +168,11 @@ def embed_sfa(audio, sr, message_bits=None, alpha=0.3):
         # Run detection to confirm
         prob, detected = detector.detect_watermark(watermarked, sr)
         
+        # Calculate BER
+        ber = 0
+        if message_bits:
+            ber = ((bits != detected.round()).float().mean()).item()
+        
         # Create results dictionary
         results = {
             "status": "success",
@@ -146,6 +181,7 @@ def embed_sfa(audio, sr, message_bits=None, alpha=0.3):
             "message_embedded": message_bits,
             "snr_db": round(float(snr), 2),
             "detection_probability": round(float(prob.item() if hasattr(prob, 'item') else prob), 3),
+            "ber": round(float(ber), 3),
             "info": "Watermark embedded using Sequential Fixed Alpha method"
         }
         
@@ -156,7 +192,7 @@ def embed_sfa(audio, sr, message_bits=None, alpha=0.3):
         return placeholder_embed_watermark(audio, message_bits)
 
 
-def embed_sda(audio, sr, message_bits=None, base_alpha=0.5):
+def embed_sda(audio, sr, message_bits=None, base_alpha=0.5, step=0):
     """
     Sequential Decaying Alpha watermarking method
     
@@ -165,6 +201,7 @@ def embed_sda(audio, sr, message_bits=None, base_alpha=0.5):
         sr: Sample rate
         message_bits: Binary message string (not used in actual implementation)
         base_alpha: Base watermark strength (default: 0.5)
+        step: Watermark step (used to calculate decaying alpha)
         
     Returns:
         Tuple of (watermarked_audio_tensor, results_dict)
@@ -178,8 +215,8 @@ def embed_sda(audio, sr, message_bits=None, base_alpha=0.5):
             bits = torch.tensor([[int(bit) for bit in message_bits]], dtype=torch.float32)
             detector.message = bits
         
-        # Calculate decaying alpha
-        alpha = base_alpha / 1  # First step
+        # Calculate decaying alpha based on step
+        alpha = base_alpha / (step + 1)  # +1 to avoid division by zero
         
         # Actually embed the watermark
         watermarked = generator(audio, sample_rate=sr, alpha=alpha)
@@ -191,6 +228,11 @@ def embed_sda(audio, sr, message_bits=None, base_alpha=0.5):
         # Run detection to confirm
         prob, detected = detector.detect_watermark(watermarked, sr)
         
+        # Calculate BER
+        ber = 0
+        if message_bits:
+            ber = ((bits != detected.round()).float().mean()).item()
+        
         # Create results dictionary
         results = {
             "status": "success",
@@ -199,6 +241,7 @@ def embed_sda(audio, sr, message_bits=None, base_alpha=0.5):
             "message_embedded": message_bits,
             "snr_db": round(float(snr), 2),
             "detection_probability": round(float(prob.item() if hasattr(prob, 'item') else prob), 3),
+            "ber": round(float(ber), 3),
             "info": "Watermark embedded using Sequential Decaying Alpha method"
         }
         
@@ -209,7 +252,7 @@ def embed_sda(audio, sr, message_bits=None, base_alpha=0.5):
         return placeholder_embed_watermark(audio, message_bits)
 
 
-def embed_pfb(audio, sr, message_bits=None, alpha=0.5):
+def embed_pfb(audio, sr, message_bits=None, alpha=0.5, step=0):
     """
     Parallel Frequency Bands watermarking method
     
@@ -218,6 +261,7 @@ def embed_pfb(audio, sr, message_bits=None, alpha=0.5):
         sr: Sample rate
         message_bits: Binary message string (not used in actual implementation)
         alpha: Watermark strength (default: 0.5)
+        step: Watermark step (used to determine the frequency band)
         
     Returns:
         Tuple of (watermarked_audio_tensor, results_dict)
@@ -235,12 +279,16 @@ def embed_pfb(audio, sr, message_bits=None, alpha=0.5):
         fft = torch.fft.fft(audio)
         bands = torch.chunk(fft, 4, dim=-1)
         
-        # Prepare watermarked bands
-        watermarked_bands = []
-        for band_idx, band in enumerate(bands):
-            # Watermark real part and keep imaginary part
-            wm_band = generator(band.real, sample_rate=sr, alpha=alpha) + 1j * band.imag
-            watermarked_bands.append(wm_band)
+        # Select band based on step (cycle through bands)
+        band_idx = step % 4
+        band = bands[band_idx]
+        
+        # Watermark real part of selected band and keep imaginary part
+        wm_band = generator(band.real, sample_rate=sr, alpha=alpha) + 1j * band.imag
+        
+        # Replace the selected band
+        watermarked_bands = list(bands)
+        watermarked_bands[band_idx] = wm_band
         
         # Transform back to time domain
         watermarked = torch.fft.ifft(torch.cat(watermarked_bands, dim=-1)).real
@@ -252,6 +300,11 @@ def embed_pfb(audio, sr, message_bits=None, alpha=0.5):
         # Run detection to confirm
         prob, detected = detector.detect_watermark(watermarked, sr)
         
+        # Calculate BER
+        ber = 0
+        if message_bits:
+            ber = ((bits != detected.round()).float().mean()).item()
+        
         # Create results dictionary
         results = {
             "status": "success",
@@ -260,6 +313,7 @@ def embed_pfb(audio, sr, message_bits=None, alpha=0.5):
             "message_embedded": message_bits,
             "snr_db": round(float(snr), 2),
             "detection_probability": round(float(prob.item() if hasattr(prob, 'item') else prob), 3),
+            "ber": round(float(ber), 3),
             "info": "Watermark embedded using Parallel Frequency Bands method"
         }
         
@@ -270,13 +324,109 @@ def embed_pfb(audio, sr, message_bits=None, alpha=0.5):
         return placeholder_embed_watermark(audio, message_bits)
 
 
+def embed_pca(audio, sr, message_bits=None, alpha=0.4, n_components=32, step=0):
+    """
+    PCA-based watermarking method
+    
+    Args:
+        audio: Audio tensor
+        sr: Sample rate
+        message_bits: Binary message string
+        alpha: Watermark strength (default: 0.4)
+        n_components: Number of PCA components to use (default: 32)
+        step: Watermark step
+        
+    Returns:
+        Tuple of (watermarked_audio_tensor, results_dict)
+    """
+    if not AUDIOSEAL_AVAILABLE:
+        return placeholder_embed_watermark(audio, message_bits)
+    
+    try:
+        # Convert string message to binary tensor if provided
+        if message_bits:
+            bits = torch.tensor([[int(bit) for bit in message_bits]], dtype=torch.float32)
+            detector.message = bits
+        
+        # Convert audio to frequency domain
+        fft = torch.fft.fft(audio)
+        mag = torch.abs(fft)
+        phase = torch.angle(fft)
+        
+        # Use magnitude for PCA-based embedding (simplified PCA implementation)
+        mag_flat = mag.view(-1, mag.size(-1))
+        mag_mean = torch.mean(mag_flat, dim=1, keepdim=True)
+        mag_centered = mag_flat - mag_mean
+        
+        # Compute covariance matrix (simplified)
+        cov = torch.matmul(mag_centered, mag_centered.transpose(-1, -2))
+        
+        # Compute eigenvalues and eigenvectors (using torch.linalg.eigh)
+        eigenvalues, eigenvectors = torch.linalg.eigh(cov)
+        
+        # Sort eigenvectors by decreasing eigenvalues
+        _, indices = torch.sort(eigenvalues, descending=True)
+        eigenvectors = eigenvectors[:, indices]
+        
+        # Select principal components
+        n_components = min(n_components, eigenvectors.size(1))
+        principal_components = eigenvectors[:, :n_components]
+        
+        # Project data onto principal components
+        projected = torch.matmul(mag_centered, principal_components)
+        
+        # Embed watermark in the principal components
+        projected_wm = generator(projected.unsqueeze(0), sample_rate=sr, alpha=alpha).squeeze(0)
+        
+        # Reconstruct magnitude
+        mag_reconstructed = torch.matmul(projected_wm, principal_components.transpose(-1, -2)) + mag_mean
+        mag_reconstructed = mag_reconstructed.view(mag.shape)
+        
+        # Combine with original phase to get watermarked FFT
+        watermarked_fft = mag_reconstructed * torch.exp(1j * phase)
+        
+        # Convert back to time domain
+        watermarked = torch.fft.ifft(watermarked_fft).real
+        
+        # Calculate SNR
+        noise = watermarked - audio
+        snr = 10 * torch.log10(audio.pow(2).mean() / noise.pow(2).mean()).item()
+        
+        # Run detection to confirm
+        prob, detected = detector.detect_watermark(watermarked, sr)
+        
+        # Calculate BER
+        ber = 0
+        if message_bits:
+            ber = ((bits != detected.round()).float().mean()).item()
+        
+        # Create results dictionary
+        results = {
+            "status": "success",
+            "action": "embed",
+            "method": "pca",
+            "message_embedded": message_bits,
+            "snr_db": round(float(snr), 2),
+            "detection_probability": round(float(prob.item() if hasattr(prob, 'item') else prob), 3),
+            "ber": round(float(ber), 3),
+            "n_components": n_components,
+            "info": "Watermark embedded using PCA-based method"
+        }
+        
+        return watermarked, results
+        
+    except Exception as e:
+        print(f"Error in PCA embedding: {e}")
+        return placeholder_embed_watermark(audio, message_bits)
+
+
 def detect_watermark(audio, method, message_bits_to_check, sr=SAMPLE_RATE):
     """
     Detect watermark in audio using specified method
     
     Args:
         audio: Audio tensor
-        method: Watermarking method (sfa, sda, pfb, placeholder)
+        method: Watermarking method (sfa, sda, pfb, pca, placeholder)
         message_bits_to_check: Binary message string to check against
         sr: Sample rate
         
@@ -353,6 +503,7 @@ def placeholder_embed_watermark(audio_tensor, message_bits_str):
         "message_embedded": message_bits_str,
         "snr_db": round(float(snr), 2),
         "detection_probability": 0.85,  # Mock probability
+        "ber": 0.25,  # Mock BER
         "info": "Watermark embedded (placeholder implementation)"
     }
     
@@ -396,6 +547,7 @@ def placeholder_detect_watermark(audio_tensor, message_bits_to_check_str):
     return results
 
 
+# Flask API routes
 @app.route('/process_audio', methods=['POST'])
 def process_audio():
     """
@@ -423,6 +575,10 @@ def process_audio():
         method = request.form.get('method', '')
         message = request.form.get('message', '')
         
+        # Get optional parameters
+        pca_components = int(request.form.get('pca_components', 32))
+        watermark_count = int(request.form.get('watermark_count', 1))
+        
         # Validate action
         if action not in ['embed', 'detect']:
             return jsonify({
@@ -431,7 +587,7 @@ def process_audio():
             }), 400
             
         # Validate method
-        if method not in ['placeholder', 'sfa', 'sda', 'pfb']:
+        if method not in ['placeholder', 'sfa', 'sda', 'pfb', 'pca']:
             return jsonify({
                 "status": "error",
                 "message": f"Unsupported watermarking method: {method}"
@@ -468,29 +624,50 @@ def process_audio():
             
         # Process based on action
         if action == 'embed':
-            # Select watermarking method
-            if method == 'sfa':
-                watermarked_audio, results = embed_sfa(audio_tensor, sr, message)
-            elif method == 'sda':
-                watermarked_audio, results = embed_sda(audio_tensor, sr, message)
-            elif method == 'pfb':
-                watermarked_audio, results = embed_pfb(audio_tensor, sr, message)
-            else:  # placeholder
-                watermarked_audio, results = placeholder_embed_watermark(audio_tensor, message)
+            # Initialize result metrics list to collect all steps
+            all_results = []
+            current_audio = audio_tensor
+            
+            # Apply multiple watermarks if requested
+            for step in range(watermark_count):
+                # Select watermarking method
+                if method == 'sfa':
+                    current_audio, results = embed_sfa(current_audio, sr, message, step=step)
+                elif method == 'sda':
+                    current_audio, results = embed_sda(current_audio, sr, message, step=step)
+                elif method == 'pfb':
+                    current_audio, results = embed_pfb(current_audio, sr, message, step=step)
+                elif method == 'pca':
+                    current_audio, results = embed_pca(current_audio, sr, message, 
+                                                      n_components=pca_components, step=step)
+                else:  # placeholder
+                    current_audio, results = placeholder_embed_watermark(current_audio, message)
+                
+                # Add step information to results
+                results["step"] = step + 1
+                all_results.append(results)
             
             # Save watermarked audio
             output_filename = f"watermarked_{method}_{unique_filename}"
-            output_path = save_audio(watermarked_audio, output_filename, sr)
+            output_path = save_audio(current_audio, output_filename, sr)
             if output_path is None:
                 return jsonify({
                     "status": "error",
                     "message": "Failed to save watermarked audio"
                 }), 500
             
-            # Add URL to processed file in response
-            results["processed_audio_url"] = f"/uploads/{output_filename}"
+            # Create final response
+            response = {
+                "status": "success",
+                "action": "embed",
+                "method": method,
+                "message_embedded": message,
+                "watermark_count": watermark_count,
+                "processed_audio_url": f"/uploads/{output_filename}",
+                "results": all_results
+            }
             
-            return jsonify(results), 200
+            return jsonify(response), 200
                 
         elif action == 'detect':
             # Use the appropriate detection function
@@ -550,6 +727,11 @@ def get_available_methods():
             "name": "Parallel Frequency Bands (PFB)",
             "description": "Embeds watermark in parallel across different frequency bands",
             "available": AUDIOSEAL_AVAILABLE
+        },
+        "pca": {
+            "name": "Principal Component Analysis (PCA)",
+            "description": "Dynamic band selection using PCA for optimal watermark embedding",
+            "available": AUDIOSEAL_AVAILABLE
         }
     }
     
@@ -582,3 +764,4 @@ if __name__ == '__main__':
     print(f"Uploads directory: {os.path.abspath(app.config['UPLOAD_FOLDER'])}")
     print(f"AudioSeal available: {AUDIOSEAL_AVAILABLE}")
     app.run(debug=True, host='0.0.0.0', port=5000)
+
