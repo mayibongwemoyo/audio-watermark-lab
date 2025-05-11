@@ -15,7 +15,7 @@ interface MethodsResponse {
   methods: Record<string, WatermarkMethod>;
 }
 
-interface WatermarkEmbedResult {
+export interface WatermarkEmbedResult {
   step: number;
   method: string;
   message_embedded: string;
@@ -25,7 +25,7 @@ interface WatermarkEmbedResult {
   info: string;
 }
 
-interface WatermarkEmbedResponse {
+export interface WatermarkEmbedResponse {
   status: string;
   action: string;
   method: string;
