@@ -1,4 +1,3 @@
-
 import os
 import uuid
 import numpy as np
@@ -9,13 +8,19 @@ import torchaudio
 import soundfile as sf
 from werkzeug.utils import secure_filename
 from scipy import stats
+import hashlib
+from models import db, create_sample_data, User, AudioFile, WatermarkEntry
+from db_api import db_api
 
 # Initialize Flask application
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max upload size
-ALLOWED_EXTENSIONS = {'wav', 'mp3', 'flac', 'ogg'}
-SAMPLE_RATE = 16000
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///watermark_lab.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# Initialize database
+db.init_app(app)
 
 # Enable CORS for all routes
 CORS(app)
@@ -24,8 +29,8 @@ CORS(app)
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 # Constants for watermarking
-NUM_WATERMARKS = 4
-NUM_AUDIOS_PER_METHOD = 5
+ALLOWED_EXTENSIONS = {'wav', 'mp3', 'flac', 'ogg'}
+SAMPLE_RATE = 16000
 
 # Try to import AudioSeal for actual watermarking
 try:
@@ -39,6 +44,8 @@ except ImportError:
     print("Warning: AudioSeal not available. Using placeholder functions.")
     AUDIOSEAL_AVAILABLE = False
 
+# Register the database API blueprint
+app.register_blueprint(db_api, url_prefix='/api')
 
 def allowed_file(filename):
     """Check if the file has an allowed extension"""
@@ -547,7 +554,7 @@ def placeholder_detect_watermark(audio_tensor, message_bits_to_check_str):
     return results
 
 
-# Flask API routes
+# Modified route to store watermark information in the database
 @app.route('/process_audio', methods=['POST'])
 def process_audio():
     """
@@ -574,6 +581,8 @@ def process_audio():
         action = request.form.get('action', '')
         method = request.form.get('method', '')
         message = request.form.get('message', '')
+        purpose = request.form.get('purpose', 'general')
+        user_id = request.form.get('user_id')
         
         # Get optional parameters
         pca_components = int(request.form.get('pca_components', 32))
@@ -612,6 +621,10 @@ def process_audio():
         unique_filename = f"{uuid.uuid4()}_{filename}"
         file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
         file.save(file_path)
+        
+        # Generate file hash
+        file_hash = generate_file_hash(file_path)
+        
         print(f"Saved file: {file_path}")
         
         # Preprocess audio
@@ -622,6 +635,19 @@ def process_audio():
                 "message": "Failed to process audio file"
             }), 500
             
+        # Save original file info to database
+        original_file = AudioFile(
+            filename=filename,
+            filepath=file_path,
+            filehash=file_hash,
+            file_size=os.path.getsize(file_path),
+            duration=audio_tensor.size(-1) / sr if sr else None,
+            sample_rate=sr,
+            user_id=user_id if user_id else None
+        )
+        db.session.add(original_file)
+        db.session.flush()  # Get ID without committing
+        
         # Process based on action
         if action == 'embed':
             # Initialize result metrics list to collect all steps
@@ -656,6 +682,46 @@ def process_audio():
                     "message": "Failed to save watermarked audio"
                 }), 500
             
+            # Generate watermarked file hash    
+            wm_file_hash = generate_file_hash(output_path)
+            
+            # Save watermarked file info to database
+            wm_file = AudioFile(
+                filename=output_filename,
+                filepath=output_path,
+                filehash=wm_file_hash,
+                file_size=os.path.getsize(output_path),
+                duration=current_audio.size(-1) / sr if sr else None,
+                sample_rate=sr,
+                user_id=user_id if user_id else None
+            )
+            db.session.add(wm_file)
+            db.session.flush()  # Get ID without committing
+            
+            # Create watermark entry in database
+            entry = WatermarkEntry(
+                action=action,
+                method=method,
+                message=message,
+                snr_db=all_results[-1].get("snr_db"),
+                detection_probability=all_results[-1].get("detection_probability"),
+                ber=all_results[-1].get("ber"),
+                is_detected=all_results[-1].get("detection_probability", 0) > 0.5,
+                purpose=purpose,
+                watermark_count=watermark_count,
+                metadata=json.dumps({
+                    "steps": watermark_count,
+                    "pca_components": pca_components if method == "pca" else None
+                }),
+                user_id=user_id if user_id else None,
+                audio_file_id=original_file.id,
+                watermarked_file_id=wm_file.id
+            )
+            db.session.add(entry)
+            
+            # Commit all database changes
+            db.session.commit()
+            
             # Create final response
             response = {
                 "status": "success",
@@ -672,16 +738,52 @@ def process_audio():
         elif action == 'detect':
             # Use the appropriate detection function
             results = detect_watermark(audio_tensor, method, message, sr)
+            
+            # Create watermark detection entry in database
+            entry = WatermarkEntry(
+                action=action,
+                method=method,
+                message=message,
+                detection_probability=results.get("detection_probability"),
+                ber=results.get("ber"),
+                is_detected=results.get("is_detected"),
+                purpose="detection",
+                watermark_count=0,
+                metadata=json.dumps({
+                    "filename": filename,
+                    "file_hash": file_hash
+                }),
+                user_id=user_id if user_id else None,
+                audio_file_id=original_file.id
+            )
+            db.session.add(entry)
+            
+            # Commit database changes
+            db.session.commit()
+            
             return jsonify(results), 200
                 
     except Exception as e:
         print(f"Error processing audio: {e}")
+        if 'db' in locals():
+            db.session.rollback()  # Roll back any failed transaction
         return jsonify({
             "status": "error",
             "message": f"Internal server error: {str(e)}"
         }), 500
 
 
+def generate_file_hash(file_path):
+    """Generate a hash for a file to use as an identifier"""
+    hasher = hashlib.md5()
+    with open(file_path, 'rb') as file:
+        # Read in chunks to handle large files
+        for chunk in iter(lambda: file.read(4096), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
+# Serve processed audio files
 @app.route('/uploads/<filename>')
 def uploaded_file(filename):
     """
@@ -690,16 +792,44 @@ def uploaded_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 
+# Health check with database status
 @app.route('/health')
 def health_check():
     """
-    Simple health check endpoint
+    Health check endpoint including database status
     """
+    db_status = "connected"
+    try:
+        # Check database connection
+        db.session.execute("SELECT 1")
+    except Exception as e:
+        db_status = f"error: {str(e)}"
+    
     return jsonify({
         "status": "healthy",
         "message": "Audio Watermark Lab API is running",
-        "audioseal_available": AUDIOSEAL_AVAILABLE
+        "audioseal_available": AUDIOSEAL_AVAILABLE,
+        "database": db_status
     }), 200
+
+
+# New route to handle database initialization
+@app.route('/init-db')
+def init_db():
+    """Initialize database with tables and sample data"""
+    try:
+        with app.app_context():
+            db.create_all()
+            create_sample_data()
+        return jsonify({
+            "status": "success",
+            "message": "Database initialized with sample data"
+        })
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": f"Failed to initialize database: {str(e)}"
+        }), 500
 
 
 @app.route('/methods')
@@ -749,19 +879,4 @@ def index():
     """
     return jsonify({
         "name": "Audio Watermark Lab API",
-        "version": "0.2.0",
-        "endpoints": {
-            "/process_audio": "POST - Process audio file (embed/detect watermark)",
-            "/uploads/<filename>": "GET - Access processed audio files",
-            "/health": "GET - API health check",
-            "/methods": "GET - Get information about available watermarking methods"
-        }
-    }), 200
-
-
-if __name__ == '__main__':
-    print("Starting Audio Watermark Lab API...")
-    print(f"Uploads directory: {os.path.abspath(app.config['UPLOAD_FOLDER'])}")
-    print(f"AudioSeal available: {AUDIOSEAL_AVAILABLE}")
-    app.run(debug=True, host='0.0.0.0', port=5000)
-
+        "version
