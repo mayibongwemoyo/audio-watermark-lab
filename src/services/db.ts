@@ -151,8 +151,15 @@ export const dbApi = {
       console.error("Failed to fetch method statistics:", error);
       toast.error("Failed to fetch method statistics");
       
-      // Return mock data as fallback
-      return await api.getMethodComparisons();
+      // Convert MethodComparison data to MethodStatistics format as a fallback
+      const mockData = await api.getMethodComparisons();
+      return mockData.map(comparison => ({
+        method: comparison.name,
+        count: 10, // Default count
+        avg_snr: comparison.snr,
+        avg_detection: comparison.detection_probability,
+        avg_ber: comparison.ber
+      }));
     }
   },
   
