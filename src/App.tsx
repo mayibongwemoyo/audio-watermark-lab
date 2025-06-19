@@ -1,4 +1,3 @@
-
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -16,6 +15,7 @@ import Detect from "./pages/app/Detect";
 import Ledger from "./pages/app/Ledger";
 import AppLayout from "./components/layout/AppLayout";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
+import Embed from "@/pages/app/Embed";
 
 const queryClient = new QueryClient();
 
@@ -38,6 +38,7 @@ const App = () => (
                   <Route index element={<Dashboard />} />
                   <Route path="detect" element={<Detect />} />
                   <Route path="ledger" element={<Ledger />} />
+                  <Route path="/app/embed" element={<Embed />} />
                 </Route>
                 
                 {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
