@@ -54,12 +54,13 @@ const Embed = () => {
           action: "embed",
           method,
           message: watermarkMessage,
-          purpose
+          purpose // Now this property exists in the interface
         };
         
         const result = await api.processAudio(params);
         
-        if (result.processed_audio_url) {
+        // Type guard to check if result is WatermarkEmbedResponse
+        if ('processed_audio_url' in result && result.processed_audio_url) {
           setProcessedAudioUrl(result.processed_audio_url);
           toast.success("Watermark embedded successfully");
         }

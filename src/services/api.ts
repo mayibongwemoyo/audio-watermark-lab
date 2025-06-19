@@ -59,6 +59,7 @@ export interface ProcessAudioParams {
   action: "embed" | "detect";
   method: string;
   message: string;
+  purpose?: string; // Added purpose property
   watermarkCount?: number;
   pcaComponents?: number;
 }
@@ -146,6 +147,10 @@ export const api = {
       formData.append("message", params.message);
       
       // Add optional parameters if provided
+      if (params.purpose) {
+        formData.append("purpose", params.purpose);
+      }
+      
       if (params.watermarkCount) {
         formData.append("watermark_count", params.watermarkCount.toString());
       }

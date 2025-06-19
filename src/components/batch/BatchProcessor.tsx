@@ -94,7 +94,7 @@ export const BatchProcessor = () => {
     const variants = {
       pending: "secondary",
       processing: "default", 
-      completed: "success",
+      completed: "default", // Changed from "success" to "default"
       failed: "destructive"
     } as const;
     
