@@ -1,4 +1,3 @@
-
 import { useContext } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Header from "@/components/layout/Header";
@@ -19,7 +18,7 @@ const Index = () => {
 
   const handleModeSelect = (mode: "research" | "application") => {
     if (mode === "research") {
-      document.getElementById("research")?.scrollIntoView({ behavior: "smooth" });
+      navigate("/research");
     } else {
       // For application mode, check if user is authenticated
       if (isAuthenticated) {
@@ -81,16 +80,11 @@ const Index = () => {
         </div>
       </section>
       
-      {/* Research Mode Section */}
-      <div id="research">
-        <main>
-          <HeroSection />
-          <AudioUploader />
-          <WatermarkControls />
-          <AnalysisSection />
-          <AboutSection />
-        </main>
-      </div>
+      {/* About Section */}
+      <main>
+        <HeroSection />
+        <AboutSection />
+      </main>
       
       <Footer />
     </div>

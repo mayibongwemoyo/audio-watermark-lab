@@ -1,5 +1,4 @@
-
-import { useState } from "react";
+import { useState, useContext } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,15 +11,19 @@ import { api, ProcessAudioParams } from "@/services/api";
 import { AudioPlayer } from "@/components/audio/AudioPlayer";
 import { BatchProcessor } from "@/components/batch/BatchProcessor";
 import { FileManager } from "@/components/files/FileManager";
+import { AuthContext } from "@/contexts/AuthContext";
 
 const Embed = () => {
+  const { user: authenticatedUser } = useContext(AuthContext);
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [audioName, setAudioName] = useState("");
-  const [watermarkMessage, setWatermarkMessage] = useState("00000000");
-  const [method, setMethod] = useState("pca");
+  const [watermarkMessage, setWatermarkMessage] = useState("00000000000000000000000000000000");
   const [purpose, setPurpose] = useState("distribution");
   const [isProcessing, setIsProcessing] = useState(false);
   const [processedAudioUrl, setProcessedAudioUrl] = useState<string | null>(null);
+  
+  // PCA is the only method used in application mode
+  const method = "pca_prime";
   
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -37,8 +40,8 @@ const Embed = () => {
       return;
     }
     
-    if (!watermarkMessage.trim()) {
-      toast.error("Please enter a watermark message");
+    if (watermarkMessage.length !== 32 || !/^[01]+$/.test(watermarkMessage)) {
+      toast.error("Please enter a 32-bit binary watermark message (e.g., '1010...').");
       return;
     }
     
@@ -52,9 +55,10 @@ const Embed = () => {
         const params: ProcessAudioParams = {
           audioFile,
           action: "embed",
-          method,
+          method, // Always PCA in application mode
           message: watermarkMessage,
-          purpose // Now this property exists in the interface
+          purpose,
+          watermarkCount: 4 // Ensure it's 4 for pca_prime
         };
         
         const result = await api.processAudio(params);
@@ -62,8 +66,12 @@ const Embed = () => {
         // Type guard to check if result is WatermarkEmbedResponse
         if ('processed_audio_url' in result && result.processed_audio_url) {
           setProcessedAudioUrl(result.processed_audio_url);
-          toast.success("Watermark embedded successfully");
-        }
+          toast.success("Watermark embedded successfully using PCA Prime");
+      } else {
+          // Handle cases where result is missing or has an unexpected structure
+          console.error("Unexpected result structure:", result);
+          toast.error("Failed to embed watermark: Unexpected response");
+      }
       } else {
         // Demo mode - simulate processing
         await new Promise(resolve => setTimeout(resolve, 2000));
@@ -72,7 +80,7 @@ const Embed = () => {
         const mockUrl = URL.createObjectURL(audioFile);
         setProcessedAudioUrl(mockUrl);
         
-        toast.success("Watermark embedded (Demo Mode)");
+        toast.success("Watermark embedded using PCA Prime (Demo Mode)");
       }
     } catch (error) {
       console.error("Error embedding watermark:", error);
@@ -98,7 +106,7 @@ const Embed = () => {
       <div className="mb-8">
         <h1 className="text-3xl font-bold mb-2">Embed & Protect</h1>
         <p className="text-muted-foreground">
-          Add watermarks to your audio files for protection and tracking
+          Add watermarks to your audio files using PCA-based watermarking for optimal protection and tracking
         </p>
       </div>
       
@@ -157,29 +165,33 @@ const Embed = () => {
                   
                   {/* Watermark Settings */}
                   <div className="space-y-4">
+                    {authenticatedUser && (
+                      <div className="p-3 bg-muted rounded-md">
+                        <p className="text-sm font-medium">Current User: {authenticatedUser.name || authenticatedUser.email}</p>
+                        <p className="text-xs text-muted-foreground">Role: {authenticatedUser.role.replace('_', ' ')}</p>
+                        <p className="text-xs text-muted-foreground">ID: {authenticatedUser.id}</p>
+                      </div>
+                    )}
                     <div className="space-y-2">
                       <Label htmlFor="watermark-message">Watermark Message</Label>
                       <Input
                         id="watermark-message"
                         value={watermarkMessage}
                         onChange={(e) => setWatermarkMessage(e.target.value)}
-                        placeholder="Enter binary message (e.g., 00000000)"
+                        placeholder="Enter 32-bit binary message (e.g., 0000...0000)" // Updated placeholder
+                        maxLength={32} // Ensure max length is 32
                       />
                     </div>
                     
                     <div className="space-y-2">
-                      <Label htmlFor="method-select">Watermarking Method</Label>
-                      <Select value={method} onValueChange={setMethod}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="pca">Principal Component Analysis (PCA)</SelectItem>
-                          <SelectItem value="sfa">Sequential Fixed Alpha (SFA)</SelectItem>
-                          <SelectItem value="sda">Sequential Decaying Alpha (SDA)</SelectItem>
-                          <SelectItem value="pfb">Parallel Frequency Bands (PFB)</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <Label>Watermarking Method</Label>
+                      <div className="flex items-center space-x-2 p-3 bg-muted rounded-md">
+                        <div className="h-2 w-2 bg-primary rounded-full"></div>
+                        <span className="font-medium">PCA Prime (Multi-Band NN)</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        PCA-based watermarking for optimal band selection and robustness
+                      </p>
                     </div>
                     
                     <div className="space-y-2">

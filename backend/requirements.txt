@@ -2,6 +2,7 @@ Flask==2.2.3
 Flask-CORS==3.0.10
 torch
 torchaudio
+tqdm
 numpy==1.24.3
 SoundFile==0.10.3.post1
 Werkzeug==2.2.3

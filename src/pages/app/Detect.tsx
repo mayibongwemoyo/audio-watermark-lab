@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -6,7 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Upload, Search, FileAudio, Clock, User, FileCheck } from "lucide-react";
-import { api, ProcessAudioParams } from "@/services/api";
+import { api, ProcessAudioParams, WatermarkDetectResponse } from "@/services/api";
+import { userRegistry } from "@/services/userRegistry";
 
 // Mock data for detected watermarks
 const mockDetections = [
@@ -45,6 +45,9 @@ const Detect = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [detections, setDetections] = useState<typeof mockDetections | null>(null);
   
+  // PCA is the only method used in application mode
+  const method = "pca";
+  
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files[0]) {
@@ -54,55 +57,68 @@ const Detect = () => {
     }
   };
   
-  const handleDetectWatermarks = async () => {
-    if (!audioFile) {
-      toast.error("Please upload an audio file first");
-      return;
-    }
-    
-    setIsProcessing(true);
-    
-    try {
-      // Check if backend is available, otherwise use demo mode
-      const isBackendAvailable = await api.checkHealth();
+// In src/pages/app/Detect.tsx
+
+const handleDetectWatermarks = async () => {
+  if (!audioFile) {
+    toast.error("Please upload an audio file first");
+    return;
+  }
+  
+  setIsProcessing(true);
+  
+  try {
+      // We will call the same preEmbedDetect function from our API service
+      const response = await api.preEmbedDetect(audioFile);
       
-      if (isBackendAvailable) {
-        const params: ProcessAudioParams = {
-          audioFile,
-          action: "detect",
-          method: "pca", // Using PCA for best detection
-          message: "00000000", // Placeholder, not used for detection
-        };
-        
-        // In a real app, this would process the response from the backend
-        await api.processAudio(params);
-        
-        // For now, use mock data with a delay to simulate processing
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        setDetections(mockDetections);
-        
-        toast.success("Watermarks detected successfully");
-      } else {
-        // Demo mode - simulate processing
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        setDetections(mockDetections);
-        
-        toast.success("Watermarks detected (Demo Mode)");
+      console.log("Backend detection response:", response);
+
+      const parsedDetections = [];
+      const detectedPerBand = response.detected_per_band || [];
+      
+      for (let i = 0; i < detectedPerBand.length; i++) {
+        const bandBits = detectedPerBand[i].join('');
+
+        // Only process bands that have a real, non-zero payload.
+        if (bandBits && bandBits.length === 8 && bandBits !== '00000000') {
+          const userId = parseInt(bandBits.slice(0, 4), 2) || (i + 1);
+          const purposeBits = bandBits.slice(4, 6);
+          const purposeMap: { [key: string]: string } = {
+            '00': 'training', '01': 'internal',
+            '10': 'remix', '11': 'commercial'
+          };
+          const purpose = purposeMap[purposeBits] || 'unknown';
+          
+          parsedDetections.push({
+            step: i,
+            userId: userId,
+            role: "user",
+            purpose: purpose,
+            timestamp: new Date().toISOString(),
+            detected: true,
+            confidence: 0.95, // Default confidence
+            payload: bandBits
+          });
+        }
       }
-    } catch (error) {
-      console.error("Error detecting watermarks:", error);
-      toast.error("Failed to detect watermarks");
-    } finally {
-      setIsProcessing(false);
-    }
-  };
+      
+      setDetections(parsedDetections);
+      toast.success(`Detection complete. Found ${parsedDetections.length} watermark(s).`);
+
+  } catch (error: any) {
+    console.error("Error detecting watermarks:", error);
+    toast.error(error.message || "Failed to detect watermarks");
+  } finally {
+    setIsProcessing(false);
+  }
+};
 
   return (
     <div className="max-w-4xl mx-auto pt-12">
       <div className="mb-8">
         <h1 className="text-3xl font-bold mb-2">Detect & Trace</h1>
         <p className="text-muted-foreground">
-          Upload audio to detect embedded watermarks and trace its history
+          Upload audio to detect embedded watermarks using PCA-based detection for optimal identification
         </p>
       </div>
       
@@ -150,6 +166,18 @@ const Detect = () => {
                 </div>
               </div>
               
+              {/* Detection Method Info */}
+              <div className="space-y-2">
+                <Label>Detection Method</Label>
+                <div className="flex items-center space-x-2 p-3 bg-muted rounded-md">
+                  <div className="h-2 w-2 bg-primary rounded-full"></div>
+                  <span className="font-medium">Principal Component Analysis (PCA)</span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  PCA-based detection for optimal watermark identification
+                </p>
+              </div>
+              
               {/* Detect Button */}
               <Button 
                 onClick={handleDetectWatermarks} 
@@ -195,8 +223,8 @@ const Detect = () => {
                         {new Date(detection.timestamp).toLocaleString()}
                       </time>
                       <p className="text-sm mt-1">
-                        <span className="font-medium">User ID: </span>
-                        {detection.userId}
+                        <span className="font-medium">User: </span>
+                        {userRegistry.getUserName(detection.userId)} (ID: {detection.userId})
                       </p>
                       <p className="text-sm">
                         <span className="font-medium">Role: </span>
@@ -209,8 +237,7 @@ const Detect = () => {
                       <div className="mt-1 flex items-center">
                         <div className="h-2 w-full rounded-full bg-black/10 dark:bg-white/10">
                           <div 
-                            className="h-2 rounded-full bg-primary" 
-                            style={{ width: `${detection.confidence * 100}%` }}
+                            className={`h-2 rounded-full bg-primary transition-all duration-300 ${detection.confidence >= 0.9 ? 'w-full' : detection.confidence >= 0.7 ? 'w-3/4' : detection.confidence >= 0.5 ? 'w-1/2' : 'w-1/4'}`}
                           ></div>
                         </div>
                         <span className="ml-2 text-xs">

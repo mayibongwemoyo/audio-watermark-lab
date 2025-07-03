@@ -1,6 +1,8 @@
 
 import { createContext, useState, ReactNode } from "react";
-import { WatermarkEmbedResult } from "@/services/api";
+// import { WatermarkEmbedResult } from "@/services/api";
+import { WatermarkResultsContextType } from "@/services/api"; // <-- Import the new name
+
 
 export interface WatermarkResults {
   snr_db: number;
@@ -8,12 +10,13 @@ export interface WatermarkResults {
   detection_probability: number;
   processed_audio_url: string;
   method: string;
-  step_results: WatermarkEmbedResult[];
+  // step_results: WatermarkEmbedResult[];
+  results: WatermarkResultsContextType ;
 }
 
 interface ResultsContextType {
-  results: WatermarkResults | null;
-  setResults: (results: WatermarkResults | null) => void;
+  results: WatermarkResultsContextType | null; // Use the new type
+  setResults: (results: WatermarkResultsContextType | null) => void; // Use the new type
   clearResults: () => void;
 }
 
@@ -28,7 +31,7 @@ interface ResultsProviderProps {
 }
 
 export const ResultsProvider = ({ children }: ResultsProviderProps) => {
-  const [results, setResults] = useState<WatermarkResults | null>(null);
+  const [results, setResults] = useState<WatermarkResultsContextType | null>(null);
 
   const clearResults = () => {
     setResults(null);

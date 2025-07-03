@@ -1,4 +1,3 @@
-
 import { toast } from "sonner";
 import { api } from "./api";
 
@@ -35,11 +34,11 @@ export interface WatermarkEntry {
   is_detected: boolean;
   purpose: string;
   watermark_count: number;
-  metadata: Record<string, any>;
+  meta_data: Record<string, any>;
   created_at: string;
   user_id: number | null;
   audio_file_id: number | null;
-  watermarked_file_id: number | null;
+  watermarked_file_id?: number;
 }
 
 export interface ApiResponse<T> {

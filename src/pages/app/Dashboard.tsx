@@ -1,358 +1,313 @@
-
 import { useState, useContext } from "react";
-import { AuthContext } from "@/contexts/AuthContext";
-import { AudioContext } from "@/contexts/AudioContext";
-import { ResultsContext } from "@/contexts/ResultsContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { toast } from "sonner";
-import { api, ProcessAudioParams, WatermarkEmbedResponse } from "@/services/api";
-import { Upload, Wand2, Download, FileAudio } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { toast } from "sonner";
+import { Upload, FileAudio, Loader2, Info, CheckCircle, ShieldAlert } from "lucide-react";
+import { api, PreEmbedDetectResponse, WatermarkEmbedResponse, ProcessAudioParams } from "@/services/api";
+import { AuthContext } from "@/contexts/AuthContext";
+import { userRegistry } from "@/services/userRegistry";
 
-// Purpose options for watermarking
-const purposeOptions = [
-  { id: "training", label: "Training Only", description: "Limited use for model training" },
-  { id: "internal", label: "Internal Use", description: "Not for public distribution" },
-  { id: "remix", label: "Remix Allowed", description: "Can be remixed with attribution" },
-  { id: "commercial", label: "Commercial Use", description: "Can be used commercially" },
-  { id: "distribution", label: "Distribution", description: "Can be publicly distributed" }
-];
+// --- Mock data for UI development ---
+const mockPurposes = ["Training", "Internal Review", "Remix", "Commercial Release"];
+
+// --- Helper Interfaces ---
+interface DetectedWatermark {
+  step: number;
+  payload: string;
+  userId: number;
+  purpose: string;
+}
 
 const Dashboard = () => {
-  const { user } = useContext(AuthContext);
-  const { audioFile, setAudioFile, audioName, setAudioName } = useContext(AudioContext);
-  const { setResults } = useContext(ResultsContext);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [purpose, setPurpose] = useState("training");
-  const [processedAudioUrl, setProcessedAudioUrl] = useState<string | null>(null);
+  const { user: authenticatedUser } = useContext(AuthContext);
   
-  // Generate a simplified binary representation of user ID (3 bits)
-  const getUserIdBits = () => {
-    if (!user) return "000";
-    const id = user.id % 8; // Ensure it fits in 3 bits (0-7)
-    return id.toString(2).padStart(3, '0');
+  // --- STATE MANAGEMENT ---
+  // File and selection state
+  const [audioFile, setAudioFile] = useState<File | null>(null);
+  const [audioName, setAudioName] = useState("");
+  const [selectedPurpose, setSelectedPurpose] = useState(mockPurposes[2]);
+
+  // Loading states
+  const [isCheckingFile, setIsCheckingFile] = useState(false);
+  const [isEmbedding, setIsEmbedding] = useState(false);
+
+  // Result states - THIS IS THE "MEMORY" OF THE COMPONENT
+  const [preEmbedResult, setPreEmbedResult] = useState<PreEmbedDetectResponse | null>(null);
+  const [detectedWatermarks, setDetectedWatermarks] = useState<DetectedWatermark[]>([]);
+  const [finalEmbedResult, setFinalEmbedResult] = useState<WatermarkEmbedResponse | null>(null);
+
+  // --- HELPER FUNCTIONS ---
+  const parseDetectionsForDisplay = (detectedBands: (string | number)[][]): DetectedWatermark[] => {
+    const parsed: DetectedWatermark[] = [];
+    if (!detectedBands) return parsed;
+    for (let i = 0; i < detectedBands.length; i++) {
+        const bandBits = detectedBands[i].join('');
+        if (bandBits !== '00000000') {
+            const userId = parseInt(bandBits.slice(0, 4), 2) || (i + 1);
+            const purposeBits = bandBits.slice(4, 6);
+            const purposeMap: { [key: string]: string } = {
+                '00': 'training', '01': 'internal review',
+                '10': 'remix', '11': 'commercial release'
+            };
+            const purpose = purposeMap[purposeBits] || 'unknown';
+            parsed.push({ step: i, payload: bandBits, userId, purpose });
+        }
+    }
+    return parsed;
   };
+
+
+// In src/pages/app/Dashboard.tsx
+
+const generatePayload = (nextIndex: number) => {
+  if (!authenticatedUser) {
+      toast.error("User not authenticated.");
+      return { message: '00000000', fullCumulativeMessage: '0'.repeat(32) };
+  }
+
+  const purposeIndex = mockPurposes.indexOf(selectedPurpose);
+
+  // No more modulo needed! The ID from AuthContext is now small and correct.
+  const userBits = authenticatedUser.id.toString(2).padStart(4, '0');
+  const purposeBits = purposeIndex.toString(2).padStart(2, '0');
+  const randomBits = Math.floor(Math.random() * 4).toString(2).padStart(2, '0');
+  const message = `${userBits}${purposeBits}${randomBits}`;
+
+  // The rest of the logic remains the same
+  const payloads = Array(4).fill('00000000');
+  detectedWatermarks.forEach(wm => {
+    if (wm.step < 4) {
+      payloads[wm.step] = wm.payload;
+    }
+  });
+  if (nextIndex < 4) {
+    payloads[nextIndex] = message;
+  }
+  const fullCumulativeMessage = payloads.join('');
   
-  // Generate action ID based on role and purpose (2 bits)
-  const getActionIdBits = () => {
-    // Simple mapping of roles and purposes to 2-bit values
-    const roleValue = user ? 
-      ["voice_actor", "producer", "editor", "marketer", "auditor"].indexOf(user.role) % 2 : 0;
-    
-    const purposeValue = ["training", "internal", "remix", "commercial", "distribution"].indexOf(purpose) % 2;
-    
-    return (roleValue + purposeValue).toString(2).padStart(2, '0');
-  };
-  
-  // Generate sequence bits (3 bits)
-  const getSequenceBits = () => {
-    // Simplified: just use current timestamp mod 8
-    return (Math.floor(Date.now() / 1000) % 8).toString(2).padStart(3, '0');
-  };
-  
-  const constructPayload = () => {
-    // Combine all parts into an 8-bit payload
-    const userBits = getUserIdBits();
-    const actionBits = getActionIdBits();
-    const sequenceBits = getSequenceBits();
-    
-    return userBits + actionBits + sequenceBits;
-  };
-  
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  return { message, fullCumulativeMessage };
+};
+
+  // --- CORE LOGIC HANDLERS ---
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files[0]) {
+      // 1. Reset all state when a new file is uploaded
       setAudioFile(files[0]);
       setAudioName(files[0].name);
-      setProcessedAudioUrl(null); // Reset processed audio when new file selected
+      setFinalEmbedResult(null);
+      setPreEmbedResult(null);
+      setDetectedWatermarks([]);
+      setIsCheckingFile(true);
+
+      try {
+        // 2. Call the pre-embed detection endpoint to analyze the file
+        toast.info("Analyzing file for existing watermarks...");
+        const result = await api.preEmbedDetect(files[0]);
+        
+        // 3. Store the analysis result in state - This is the crucial "memory" step
+        setPreEmbedResult(result);
+        const foundWatermarks = parseDetectionsForDisplay(result.detected_per_band);
+        setDetectedWatermarks(foundWatermarks);
+        
+        if (foundWatermarks.length > 0) {
+            toast.success(`Analysis complete. Found ${foundWatermarks.length} existing watermark(s).`);
+        } else {
+            toast.success("Analysis complete. This is a clean audio file.");
+        }
+
+      } catch (error: any) {
+        console.error("Error during file analysis:", error);
+        toast.error(error.message || "Failed to analyze audio file.");
+        setAudioFile(null); // Clear file on error
+      } finally {
+        setIsCheckingFile(false);
+      }
     }
   };
 
-  const handleApplyWatermark = async () => {
-    if (!audioFile) {
-      toast.error("Please upload an audio file first");
+  const handleEmbedWatermark = async () => {
+    // 1. Check if the file has been uploaded and analyzed first
+    if (!audioFile || !preEmbedResult) {
+      toast.error("Please select a file and wait for analysis to complete.");
       return;
     }
-    
-    setIsProcessing(true);
-    
-    // Generate 8-bit payload
-    const message = constructPayload();
-    console.log("Generated payload:", message);
-    
+
+    // 2. Check if all watermark slots are already full
+    if (preEmbedResult.next_wm_idx >= 4) {
+      toast.error("All 4 watermark slots are full. Cannot embed a new one.");
+      return;
+    }
+
+    setIsEmbedding(true);
+    setFinalEmbedResult(null);
+
+    // 3. Generate the new 8-bit message and the cumulative 32-bit message
+    const { message, fullCumulativeMessage } = generatePayload(preEmbedResult.next_wm_idx);
+
     try {
       const params: ProcessAudioParams = {
         audioFile,
-        action: "embed",
-        method: "pca", // Using PCA for best quality
+        action: 'embed',
+        method: 'pca',
         message,
-        watermarkCount: 1,
-        pcaComponents: 32
+        full_cumulative_message: fullCumulativeMessage,
+        original_audio_file_id: preEmbedResult.original_audio_file_id,
+        current_wm_idx: preEmbedResult.next_wm_idx,
+        purpose: selectedPurpose.toLowerCase().replace(' ', '_'),
       };
-      
-      // Check if backend is available, otherwise use demo mode
-      const isBackendAvailable = await api.checkHealth();
-      
-      if (isBackendAvailable) {
-        const response = await api.processAudio(params) as WatermarkEmbedResponse;
-        
-        // Set results in context
-        setResults({
-          snr_db: response.results[response.results.length - 1].snr_db,
-          ber: response.results[response.results.length - 1].ber,
-          detection_probability: response.results[response.results.length - 1].detection_probability,
-          processed_audio_url: response.processed_audio_url,
-          method: response.method,
-          step_results: response.results
-        });
-        
-        setProcessedAudioUrl(response.processed_audio_url);
-        
-        // Log watermark action (in a real app, this would be saved to database)
-        console.log("Watermark embedded:", {
-          user: user?.id,
-          role: user?.role,
-          purpose,
-          payload: message,
-          timestamp: new Date().toISOString(),
-          audioName
-        });
-        
-        toast.success("Watermark successfully embedded");
+
+      // 4. Call the API
+      const result = await api.processAudio(params);
+
+      // 5. --- THIS IS THE CORRECTED FIX ---
+      // The type guard 'if' statement is now correctly included to check the response type.
+      if (result && result.action === 'embed') {
+        // Inside this 'if' block, TypeScript knows 'result' is a WatermarkEmbedResponse
+        setFinalEmbedResult(result as WatermarkEmbedResponse);
+        toast.success(`Watermark #${preEmbedResult.next_wm_idx + 1} embedded successfully!`);
+        toast.info("You can now download the new file and re-upload it to continue the chain.");
       } else {
-        // Demo mode - simulate processing
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        
-        setResults({
-          snr_db: 42.3,
-          ber: 0.05,
-          detection_probability: 0.94,
-          processed_audio_url: URL.createObjectURL(audioFile), // Use original file in demo mode
-          method: "pca",
-          step_results: [{
-            step: 1,
-            method: "pca",
-            message_embedded: message,
-            snr_db: 42.3,
-            detection_probability: 0.94,
-            ber: 0.05,
-            info: "Watermark embedded using PCA method (Demo Mode)"
-          }]
-        });
-        
-        setProcessedAudioUrl(URL.createObjectURL(audioFile));
-        
-        // Log demo watermark
-        console.log("Demo watermark embedded:", {
-          user: user?.id,
-          role: user?.role,
-          purpose,
-          payload: message,
-          timestamp: new Date().toISOString(),
-          audioName
-        });
-        
-        toast.success("Watermark embedded (Demo Mode)");
+        // This handles any unexpected response from the server
+        toast.error("Received an unexpected response type after embedding.");
+        console.error("Unexpected response from backend:", result);
       }
-    } catch (error) {
+
+    } catch (error: any) {
       console.error("Error embedding watermark:", error);
-      toast.error("Failed to embed watermark");
+      toast.error(error.message || "Failed to embed watermark.");
     } finally {
-      setIsProcessing(false);
+      setIsEmbedding(false);
     }
   };
 
+  // --- JSX RENDER ---
   return (
-    <div className="max-w-4xl mx-auto pt-12">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-2">Dashboard</h1>
-        <p className="text-muted-foreground">
-          Embed watermarks into audio files with your identity
-        </p>
-      </div>
-      
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card className="col-span-1 md:col-span-2">
+    <div className="max-w-4xl mx-auto pt-12 grid grid-cols-1 md:grid-cols-2 gap-8">
+      {/* Left Column: Uploader and Controls */}
+      <div className="space-y-6">
+        <Card>
           <CardHeader>
-            <CardTitle>Embed Audio Watermark</CardTitle>
+            <CardTitle>1. Upload Audio</CardTitle>
           </CardHeader>
-          
           <CardContent>
-            <div className="space-y-6">
-              {/* Audio Upload */}
-              <div className="space-y-2">
-                <Label htmlFor="audio-upload">Upload Audio File</Label>
-                <div className="border-2 border-dashed rounded-lg p-6 text-center">
-                  <Input 
-                    id="audio-upload" 
-                    type="file" 
-                    accept="audio/*"
-                    onChange={handleFileChange}
-                    className="hidden"
-                  />
-                  <label 
-                    htmlFor="audio-upload" 
-                    className="flex flex-col items-center justify-center cursor-pointer"
-                  >
-                    {audioFile ? (
-                      <>
-                        <FileAudio className="h-12 w-12 text-primary mb-2" />
-                        <p className="font-medium">{audioName}</p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Click to change file
-                        </p>
-                      </>
-                    ) : (
-                      <>
-                        <Upload className="h-12 w-12 text-muted-foreground mb-2" />
-                        <p className="font-medium">Click to upload audio</p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          WAV, MP3, FLAC supported
-                        </p>
-                      </>
-                    )}
-                  </label>
-                </div>
-              </div>
-              
-              {/* Purpose Selection */}
-              <div className="space-y-2">
-                <Label htmlFor="purpose">Purpose</Label>
-                <Select 
-                  value={purpose} 
-                  onValueChange={setPurpose}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select purpose" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {purposeOptions.map((option) => (
-                      <SelectItem key={option.id} value={option.id}>
-                        {option.label} - {option.description}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  The purpose will be embedded in the watermark
-                </p>
-              </div>
-              
-              {/* Watermark Button */}
-              <Button 
-                onClick={handleApplyWatermark} 
-                className="w-full" 
-                disabled={isProcessing || !audioFile}
-              >
-                {isProcessing ? (
-                  <div className="flex items-center">
-                    <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2"></div>
-                    Embedding Watermark...
-                  </div>
-                ) : (
-                  <>
-                    <Wand2 className="h-4 w-4 mr-2" />
-                    Embed Watermark
-                  </>
-                )}
-              </Button>
-              
-              {/* Processed Audio Player */}
-              {processedAudioUrl && (
-                <div className="space-y-2">
-                  <Label>Watermarked Audio</Label>
-                  <div className="border rounded-md p-4">
-                    <audio 
-                      src={processedAudioUrl} 
-                      controls 
-                      className="w-full" 
-                    />
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full mt-2"
-                      onClick={() => {
-                        const a = document.createElement("a");
-                        a.href = processedAudioUrl;
-                        a.download = `watermarked_${audioName || "audio.wav"}`;
-                        document.body.appendChild(a);
-                        a.click();
-                        document.body.removeChild(a);
-                      }}
-                    >
-                      <Download className="h-4 w-4 mr-2" />
-                      Download Watermarked Audio
-                    </Button>
-                  </div>
-                </div>
+            <Label htmlFor="audio-upload-embed" className="border-2 border-dashed rounded-lg p-6 text-center block cursor-pointer">
+              <Input id="audio-upload-embed" type="file" accept="audio/*" onChange={handleFileChange} className="hidden" />
+              {audioFile ? (
+                <>
+                  <FileAudio className="h-12 w-12 text-primary mx-auto mb-2" />
+                  <p className="font-medium">{audioName}</p>
+                  <p className="text-xs text-muted-foreground mt-1">Click to change file</p>
+                </>
+              ) : (
+                <>
+                  <Upload className="h-12 w-12 text-muted-foreground mx-auto mb-2" />
+                  <p className="font-medium">Click to upload audio</p>
+                  <p className="text-xs text-muted-foreground mt-1">WAV, MP3, FLAC supported</p>
+                </>
               )}
+            </Label>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>2. Configure New Watermark</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {authenticatedUser && (
+              <div className="p-3 bg-muted rounded-md">
+                <p className="text-sm font-medium">Current User: {authenticatedUser.name || authenticatedUser.email}</p>
+                <p className="text-xs text-muted-foreground">Role: {authenticatedUser.role.replace('_', ' ')}</p>
+                <p className="text-xs text-muted-foreground">ID: {authenticatedUser.id}</p>
+              </div>
+            )}
+            <div>
+              <Label>Purpose</Label>
+              <Select onValueChange={setSelectedPurpose} defaultValue={selectedPurpose}>
+                <SelectTrigger><SelectValue placeholder="Select a purpose" /></SelectTrigger>
+                <SelectContent>
+                  {mockPurposes.map(purpose => <SelectItem key={purpose} value={purpose}>{purpose}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
           </CardContent>
         </Card>
-        
-        {/* Watermark Info Card */}
+
+        <Button onClick={handleEmbedWatermark} className="w-full" disabled={isCheckingFile || isEmbedding || !audioFile || finalEmbedResult !== null}>
+          {(isCheckingFile || isEmbedding) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          {isCheckingFile ? "Analyzing File..." : isEmbedding ? "Embedding Watermark..." : `Embed Watermark #${(preEmbedResult?.next_wm_idx ?? 0) + 1}`}
+        </Button>
+      </div>
+
+      {/* Right Column: Results and Status */}
+      <div className="space-y-6">
         <Card>
-          <CardHeader>
-            <CardTitle>Watermark Info</CardTitle>
-          </CardHeader>
-          
-          <CardContent>
-            <div className="space-y-4">
-              <div className="space-y-1">
-                <Label>User</Label>
-                <div className="font-mono bg-black/5 dark:bg-white/5 p-2 rounded text-sm">
-                  ID: {user?.id || "Unknown"}
+            <CardHeader>
+                <CardTitle>Analysis & Status</CardTitle>
+            </CardHeader>
+            <CardContent>
+                {/* Pre-Embed Analysis Results */}
+                <div className="space-y-4">
+                    <h3 className="font-semibold text-lg">Existing Watermarks</h3>
+                    {isCheckingFile && <div className="flex items-center text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin"/>Analyzing...</div>}
+                    {!isCheckingFile && detectedWatermarks.length > 0 && (
+                        <ul className="space-y-2 text-sm list-disc list-inside">
+                            {detectedWatermarks.map((wm) => (
+                                <li key={wm.step}>
+                                    <span className="font-bold">Band {wm.step}:</span> {userRegistry.getUserName(wm.userId)} ({wm.userId}), Purpose: {wm.purpose}
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                    {!isCheckingFile && preEmbedResult && detectedWatermarks.length === 0 && (
+                        <div className="flex items-center text-green-600"><CheckCircle className="mr-2 h-4 w-4"/>No existing watermarks found. Ready to embed.</div>
+                    )}
+                    {!preEmbedResult && !isCheckingFile && (
+                        <div className="flex items-center text-muted-foreground"><Info className="mr-2 h-4 w-4"/>Upload an audio file to begin.</div>
+                    )}
+                    {preEmbedResult?.next_wm_idx === 4 && (
+                        <div className="flex items-center text-red-600"><ShieldAlert className="mr-2 h-4 w-4"/>All watermark slots are full.</div>
+                    )}
                 </div>
-              </div>
-              
-              <div className="space-y-1">
-                <Label>Role</Label>
-                <div className="font-mono bg-black/5 dark:bg-white/5 p-2 rounded text-sm">
-                  {user?.role?.replace('_', ' ') || "Unknown"}
+
+                <hr className="my-6"/>
+
+                {/* Final Embed Results */}
+                <div className="space-y-4">
+                    <h3 className="font-semibold text-lg">Latest Embedding Result</h3>
+                    {isEmbedding && <div className="flex items-center text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin"/>Embedding...</div>}
+                    {finalEmbedResult && finalEmbedResult.status === 'success' && (
+                        <div className="text-sm space-y-2">
+                           <p><span className="font-semibold">Status:</span> Watermark embedded successfully!</p>
+                           <p><span className="font-semibold">SNR:</span> {finalEmbedResult.results.snr_db.toFixed(2)} dB</p>
+                           {/* <p><span className="font-semibold">MSE:</span> {finalEmbedResult.results.mse.toExponential(4)}</p> */}
+                           <p><span className="font-semibold">Bit Error Rate (BER):</span> {finalEmbedResult.results.ber}</p>
+                           <p><a href={finalEmbedResult.processed_audio_url} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Download Watermarked Audio</a></p>
+                        </div>
+                    )}
+                    {!finalEmbedResult && !isEmbedding && (
+                        <div className="flex items-center text-muted-foreground"><Info className="mr-2 h-4 w-4"/>Awaiting embedding process.</div>
+                    )}
                 </div>
-              </div>
-              
-              <div className="space-y-1">
-                <Label>Purpose</Label>
-                <div className="font-mono bg-black/5 dark:bg-white/5 p-2 rounded text-sm">
-                  {purposeOptions.find(p => p.id === purpose)?.label || purpose}
+
+                {/* Debug Section - Remove in production */}
+                <hr className="my-6"/>
+                <div className="space-y-4">
+                    <h3 className="font-semibold text-lg text-muted-foreground">Debug: Registered Users</h3>
+                    <div className="text-xs space-y-1">
+                        {userRegistry.getAllUsers().map(user => (
+                            <div key={user.id} className="flex justify-between">
+                                <span>ID {user.id}: {user.name}</span>
+                                <span className="text-muted-foreground">{user.role}</span>
+                            </div>
+                        ))}
+                    </div>
                 </div>
-              </div>
-              
-              <div className="space-y-1">
-                <Label>Timestamp</Label>
-                <div className="font-mono bg-black/5 dark:bg-white/5 p-2 rounded text-sm">
-                  {new Date().toLocaleString()}
-                </div>
-              </div>
-              
-              <div className="space-y-1">
-                <Label>Payload</Label>
-                <div className="font-mono bg-black/5 dark:bg-white/5 p-2 rounded text-sm overflow-auto">
-                  {constructPayload()}
-                </div>
-              </div>
-              
-              <div className="space-y-1">
-                <Label>Breakdown</Label>
-                <div className="font-mono bg-black/5 dark:bg-white/5 p-2 rounded text-sm">
-                  <div className="flex">
-                    <span className="bg-blue-200 dark:bg-blue-800 px-1 mr-1">{getUserIdBits()}</span>
-                    <span className="bg-green-200 dark:bg-green-800 px-1 mr-1">{getActionIdBits()}</span>
-                    <span className="bg-purple-200 dark:bg-purple-800 px-1">{getSequenceBits()}</span>
-                  </div>
-                  <div className="grid grid-cols-3 gap-1 text-xs mt-1">
-                    <span>User ID</span>
-                    <span>Action</span>
-                    <span>Sequence</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </CardContent>
+            </CardContent>
         </Card>
       </div>
     </div>

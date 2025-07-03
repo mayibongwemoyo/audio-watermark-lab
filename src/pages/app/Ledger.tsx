@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -49,13 +48,13 @@ const Ledger = () => {
   const filteredEntries = entries.filter(entry => {
     // Filter by search term
     const matchesSearch = 
-      (entry.metadata?.filename || "").toLowerCase().includes(searchTerm.toLowerCase()) || 
+      (entry.meta_data?.filename || "").toLowerCase().includes(searchTerm.toLowerCase()) || 
       entry.message.toLowerCase().includes(searchTerm.toLowerCase()) ||
       entry.method.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (entry.purpose || "").toLowerCase().includes(searchTerm.toLowerCase());
       
     // Filter by selected roles (if we have user data)
-    const userRole = entry.metadata?.user_role || "";
+    const userRole = entry.meta_data?.user_role || "";
     const matchesRole = selectedRoles.length === 0 || selectedRoles.includes(userRole);
     
     return matchesSearch && matchesRole;
@@ -210,7 +209,7 @@ const Ledger = () => {
                       <td className="py-3 px-4">
                         <div className="flex items-center">
                           <FileAudio className="h-4 w-4 mr-2 text-muted-foreground" />
-                          <span>{entry.metadata?.filename || "Unknown file"}</span>
+                          <span>{entry.meta_data?.filename || "Unknown file"}</span>
                         </div>
                         <div className="text-xs text-muted-foreground mt-1">
                           {entry.action === "embed" ? "Watermarked" : "Detection"}

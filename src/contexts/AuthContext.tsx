@@ -1,6 +1,6 @@
-
 import { createContext, useState, useEffect, ReactNode } from "react";
 import { toast } from "sonner";
+import { userRegistry } from "@/services/userRegistry";
 
 // User roles for the application
 export type UserRole = "voice_actor" | "producer" | "editor" | "marketer" | "auditor";
@@ -55,39 +55,46 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     setLoading(false);
   }, []);
 
-  // Login function - for now we'll implement a mock version
-  // In the future, this would integrate with Supabase
+
   const login = async (email: string, password: string) => {
     setLoading(true);
     
     try {
-      // Mock successful login for demonstration
-      // In a real app, this would make an API call to authenticate
-      if (email && password) {
-        // Simulate API delay
-        await new Promise(resolve => setTimeout(resolve, 800));
-        
-        // Mock user data - in real app, this would come from an API
-        const mockUser: User = {
-          id: 1,
-          email,
-          role: "voice_actor",
-          name: email.split('@')[0] // Just use part of the email as a name
+      await new Promise(resolve => setTimeout(resolve, 500)); // Simulate API delay
+      
+      if (!email || !password) {
+        throw new Error("Email and password are required.");
+      }
+
+      // --- THIS IS THE NEW, SIMPLE LOGIC ---
+      // 1. Get all our known users.
+      const allUsers = userRegistry.getAllUsers();
+      
+      // 2. Find the one user where BOTH email and password match.
+      const foundUser = allUsers.find(u => 
+        u.email.toLowerCase() === email.toLowerCase() && u.password === password
+      );
+
+      // 3. If we found a match, log them in.
+      if (foundUser) {
+        const userToLogin: User = {
+            id: foundUser.id, // The ID is now guaranteed to be small and correct (1-5)
+            email: foundUser.email,
+            role: foundUser.role as UserRole,
+            name: foundUser.name
         };
         
-        // Store in localStorage for persistence
-        localStorage.setItem("awl_user", JSON.stringify(mockUser));
-        
-        setUser(mockUser);
+        localStorage.setItem("awl_user", JSON.stringify(userToLogin));
+        setUser(userToLogin);
         setIsAuthenticated(true);
-        toast.success("Successfully logged in!");
-        
+        toast.success(`Welcome back, ${userToLogin.name}!`);
         return;
+      } else {
+        // 4. If no match, the login fails.
+        throw new Error("Invalid email or password.");
       }
-      
-      throw new Error("Invalid credentials");
     } catch (error) {
-      toast.error("Login failed: " + (error instanceof Error ? error.message : "Unknown error"));
+      toast.error(`Login failed: ${error instanceof Error ? error.message : "Unknown error"}`);
       throw error;
     } finally {
       setLoading(false);
@@ -109,6 +116,14 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         name,
         role
       };
+      
+      // Register user in the registry
+      userRegistry.registerUser({
+        id: mockUser.id,
+        name: mockUser.name || email.split('@')[0],
+        role: mockUser.role,
+        email: mockUser.email
+      });
       
       // Store in localStorage for persistence
       localStorage.setItem("awl_user", JSON.stringify(mockUser));

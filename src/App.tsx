@@ -16,6 +16,7 @@ import Ledger from "./pages/app/Ledger";
 import AppLayout from "./components/layout/AppLayout";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 import Embed from "@/pages/app/Embed";
+import Research from "@/pages/Research";
 
 const queryClient = new QueryClient();
 
@@ -32,6 +33,7 @@ const App = () => (
                 <Route path="/" element={<Index />} />
                 <Route path="/login" element={<Login />} />
                 <Route path="/register" element={<Register />} />
+                <Route path="/research" element={<Research />} />
                 
                 {/* Application mode routes (protected) */}
                 <Route path="/app" element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>

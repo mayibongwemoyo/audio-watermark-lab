@@ -1,4 +1,3 @@
-
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 import json
@@ -44,7 +43,14 @@ class AudioFile(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     
     # Relationships
-    watermark_entries = db.relationship('WatermarkEntry', backref='audio_file', lazy=True)
+    watermark_entries = db.relationship('WatermarkEntry', 
+                                         foreign_keys='WatermarkEntry.audio_file_id',
+                                         backref='audio_file', 
+                                         lazy=True)
+    watermarked_entries = db.relationship('WatermarkEntry',
+                                          foreign_keys='WatermarkEntry.watermarked_file_id',
+                                          backref='watermarked_file',
+                                          lazy=True)
 
     def to_dict(self):
         return {
@@ -64,16 +70,21 @@ class WatermarkEntry(db.Model):
     __tablename__ = 'watermark_entries'
     
     id = db.Column(db.Integer, primary_key=True)
-    action = db.Column(db.String(20), nullable=False)  # embed or detect
-    method = db.Column(db.String(20), nullable=False)  # sfa, sda, pfb, pca, etc.
-    message = db.Column(db.String(100))                # Binary message
-    snr_db = db.Column(db.Float)                       # Signal-to-noise ratio
-    detection_probability = db.Column(db.Float)        # Detection probability
-    ber = db.Column(db.Float)                          # Bit error rate
-    is_detected = db.Column(db.Boolean)                # Whether watermark was detected
-    purpose = db.Column(db.String(50))                 # Purpose of watermarking
-    watermark_count = db.Column(db.Integer, default=1) # Number of watermarks applied
-    metadata = db.Column(db.Text)                      # JSON metadata
+    action = db.Column(db.String(20), nullable=False)   # embed or detect
+    method = db.Column(db.String(20), nullable=False)   # sfa, sda, pfb, pca, etc.
+    message = db.Column(db.String(100))                 # Binary message
+    
+    # Metrics for embedding
+    snr_db = db.Column(db.Float)                        # Signal-to-noise ratio
+    mse = db.Column(db.Float)                           # ADD THIS LINE: Mean Squared Error
+    detection_probability = db.Column(db.Float)         # Detection probability
+    ber = db.Column(db.Float)                           # Bit error rate
+    is_detected = db.Column(db.Boolean)                 # Whether watermark was detected
+    
+    # Contextual data
+    purpose = db.Column(db.String(50))                  # Purpose of watermarking
+    watermark_count = db.Column(db.Integer, default=1)  # Number of watermarks applied
+    meta_data = db.Column(db.Text)                      # JSON metadata
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     # Foreign keys
@@ -82,24 +93,31 @@ class WatermarkEntry(db.Model):
     watermarked_file_id = db.Column(db.Integer, db.ForeignKey('audio_files.id'), nullable=True)
     
     def to_dict(self):
+        meta_data_dict = {}
+        if self.meta_data:
+            try:
+                meta_data_dict = json.loads(self.meta_data)
+            except json.JSONDecodeError:
+                meta_data_dict = {"raw_meta_data": self.meta_data}
+
         return {
             'id': self.id,
             'action': self.action,
             'method': self.method,
             'message': self.message,
             'snr_db': self.snr_db,
+            'mse': self.mse, # Include MSE in dict conversion
             'detection_probability': self.detection_probability,
             'ber': self.ber,
             'is_detected': self.is_detected,
             'purpose': self.purpose,
             'watermark_count': self.watermark_count,
-            'metadata': json.loads(self.metadata) if self.metadata else {},
+            'meta_data': meta_data_dict,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'user_id': self.user_id,
             'audio_file_id': self.audio_file_id,
             'watermarked_file_id': self.watermarked_file_id
         }
-
 
 # Functions to initialize the database with sample data
 def create_sample_data():
@@ -116,53 +134,17 @@ def create_sample_data():
         ]
         db.session.add_all(users)
         
-        # Create sample audio files
+        # Create sample audio files (Simplified for brevity, assuming paths might not exist locally)
+        # These are just placeholders to link to WatermarkEntry
         audio_files = [
             AudioFile(
-                filename="voice_sample_01.wav",
-                filepath="/uploads/voice_sample_01.wav",
-                filehash="ae129f8d7c298a759f",
-                file_size=1024000,
-                duration=45.5,
-                sample_rate=44100,
-                user_id=3
+                filename="voice_sample_01.wav", filepath="dummy_path_1.wav", filehash="ae129f8d7c298a759f",
+                file_size=1000000, duration=30.0, sample_rate=16000, user_id=3
             ),
             AudioFile(
-                filename="track_mixdown_v2.wav",
-                filepath="/uploads/track_mixdown_v2.wav",
-                filehash="cb852e4f1d38b612a3",
-                file_size=3072000,
-                duration=120.2,
-                sample_rate=48000,
-                user_id=5
+                filename="track_mixdown_v2.wav", filepath="dummy_path_2.wav", filehash="cb852e4f1d38b612a3",
+                file_size=2000000, duration=60.0, sample_rate=16000, user_id=5
             ),
-            AudioFile(
-                filename="final_mix_with_fx.wav",
-                filepath="/uploads/final_mix_with_fx.wav",
-                filehash="f2e901d45c781b324d",
-                file_size=4096000,
-                duration=180.7,
-                sample_rate=48000,
-                user_id=7
-            ),
-            AudioFile(
-                filename="podcast_intro.mp3",
-                filepath="/uploads/podcast_intro.mp3",
-                filehash="ba92c13e487f20d6e5",
-                file_size=512000,
-                duration=15.3,
-                sample_rate=44100,
-                user_id=2
-            ),
-            AudioFile(
-                filename="ad_campaign_audio.wav",
-                filepath="/uploads/ad_campaign_audio.wav",
-                filehash="d31fc9a8526b478209",
-                file_size=2048000,
-                duration=60.0,
-                sample_rate=44100,
-                user_id=1
-            )
         ]
         db.session.add_all(audio_files)
         
@@ -172,83 +154,26 @@ def create_sample_data():
         
         entries = [
             WatermarkEntry(
-                action="embed",
-                method="sfa",
-                message="01100101",
-                snr_db=65.78,
-                detection_probability=0.85,
-                ber=0.125,
-                is_detected=True,
-                purpose="training",
-                watermark_count=1,
-                metadata=json.dumps({"device": "studio-a", "source": "microphone"}),
-                created_at=two_days_ago.replace(hour=10),
-                user_id=3,
-                audio_file_id=1
+                action="embed", method="pca_prime", message="10101010101010101010101010101010",
+                snr_db=32.5, mse=0.0004, # ADDED MSE HERE
+                detection_probability=0.99, ber=0.005, is_detected=True,
+                purpose="training", watermark_count=4,
+                meta_data=json.dumps({"device": "studio-a", "source": "microphone"}),
+                created_at=two_days_ago.replace(hour=10), user_id=3, audio_file_id=1, watermarked_file_id=None # Assuming no specific watermarked_file for sample data
             ),
             WatermarkEntry(
-                action="embed",
-                method="sda",
-                message="10101010",
-                snr_db=58.32,
-                detection_probability=0.92,
-                ber=0.0625,
-                is_detected=True,
-                purpose="internal",
-                watermark_count=2,
-                metadata=json.dumps({"device": "mixing-desk", "project": "album-release"}),
-                created_at=two_days_ago.replace(hour=14),
-                user_id=5,
-                audio_file_id=2
+                action="detect", method="pca_prime", message="10101010101010101010101010101010",
+                snr_db=None, mse=None, # For detection entries, SNR/MSE are not always applicable
+                detection_probability=0.95, ber=0.01, is_detected=True,
+                purpose="detection", watermark_count=0,
+                meta_data=json.dumps({"result_info": "Detected on modified file"}),
+                created_at=two_days_ago.replace(hour=11), user_id=1, audio_file_id=2, watermarked_file_id=None
             ),
-            WatermarkEntry(
-                action="embed",
-                method="pfb",
-                message="11000101",
-                snr_db=72.15,
-                detection_probability=0.78,
-                ber=0.1875,
-                is_detected=True,
-                purpose="remix",
-                watermark_count=3,
-                metadata=json.dumps({"software": "protools", "effects": ["reverb", "eq"]}),
-                created_at=two_days_ago.replace(hour=18),
-                user_id=7,
-                audio_file_id=3
-            ),
-            WatermarkEntry(
-                action="embed",
-                method="pca",
-                message="00111001",
-                snr_db=68.94,
-                detection_probability=0.88,
-                ber=0.125,
-                is_detected=True,
-                purpose="distribution",
-                watermark_count=1,
-                metadata=json.dumps({"platform": "spotify", "release": "podcast-ep5"}),
-                created_at=two_days_ago.replace(day=two_days_ago.day+1, hour=9),
-                user_id=2,
-                audio_file_id=4
-            ),
-            WatermarkEntry(
-                action="embed",
-                method="sfa",
-                message="10010110",
-                snr_db=61.47,
-                detection_probability=0.81,
-                ber=0.25,
-                is_detected=True,
-                purpose="commercial",
-                watermark_count=2,
-                metadata=json.dumps({"campaign": "summer-sale", "client": "retail-corp"}),
-                created_at=datetime.utcnow().replace(hour=11),
-                user_id=1,
-                audio_file_id=5
-            )
         ]
         db.session.add_all(entries)
         
         # Commit all sample data
         db.session.commit()
-        print("Sample data created successfully.")
+        print("Sample data created.")
+    else:
+        print("Sample data already exists.")

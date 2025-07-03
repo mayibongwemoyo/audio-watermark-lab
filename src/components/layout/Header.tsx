@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Moon, Sun } from 'lucide-react';
@@ -52,6 +51,7 @@ const Header = () => {
         
         <div className="flex items-center gap-4">
           <nav className="hidden md:flex gap-8">
+            <a href="/research" className="text-sm hover:text-black/70 dark:hover:text-white/70 transition-colors">Research</a>
             <a href="#upload" className="text-sm hover:text-black/70 dark:hover:text-white/70 transition-colors">Upload</a>
             <a href="#watermark" className="text-sm hover:text-black/70 dark:hover:text-white/70 transition-colors">Watermark</a>
             <a href="#analysis" className="text-sm hover:text-black/70 dark:hover:text-white/70 transition-colors">Analysis</a>

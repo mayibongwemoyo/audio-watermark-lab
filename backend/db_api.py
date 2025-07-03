@@ -1,4 +1,3 @@
-
 from flask import Blueprint, request, jsonify
 from models import db, User, AudioFile, WatermarkEntry
 import json
@@ -99,11 +98,11 @@ def create_watermark():
         raise BadRequest("No data provided")
     
     # Convert JSON string to dict if needed
-    metadata = data.get('metadata')
-    if isinstance(metadata, dict):
-        metadata_json = json.dumps(metadata)
+    meta_data = data.get('meta_data')
+    if isinstance(meta_data, dict):
+        meta_data_json = json.dumps(meta_data)
     else:
-        metadata_json = metadata
+        meta_data_json = meta_data
         
     # Create new watermark entry
     new_entry = WatermarkEntry(
@@ -116,7 +115,7 @@ def create_watermark():
         is_detected=data.get('is_detected'),
         purpose=data.get('purpose'),
         watermark_count=data.get('watermark_count', 1),
-        metadata=metadata_json,
+        meta_data=meta_data_json,
         user_id=data.get('user_id'),
         audio_file_id=data.get('audio_file_id'),
         watermarked_file_id=data.get('watermarked_file_id')
