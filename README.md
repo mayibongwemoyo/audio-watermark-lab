@@ -1,6 +1,16 @@
+## Research Summary
+
+The research proposes a novel deep learning-based audio watermarking system to address the increasing need for digital audio traceability in a world where content is constantly recycled and manipulated. The system uses a generator-detector neural network model based on a Parallel Frequency Band (PFB) paradigm, incorporating multiple distinct watermarks concurrently into the audio's frequency domain. A key innovation is the use of learned basis vectors, inspired by Principal Component Analysis (PCA), to establish optimal and separable embedding spaces for each watermark.
+
+The dissertation outlines the methodology, including the algorithm overview for the generator and detector, training pipeline, dataset (Vox Populi), and evaluation metrics such as Bit Error Rate (BER), Signal-to-Noise Ratio (SNR), Mean Squared Error (MSE), and Perceptual Evaluation of Speech Quality (PESQ). The system aims to achieve imperceptibility, robustness, and capacity, even under adversarial distortions like Additive White Gaussian Noise and low-pass filtering.
+
+The feasibility study section covers technical, economic, social, and operational aspects, concluding that the project is feasible due to the availability of open-source software and minimal development costs. The significance and motivation highlight the potential for enhanced copyright protection, content authentication, and contributions to audio cryptography and deep learning research.
+
+The research also details the system analysis and design of the "Audio Watermark Lab" application, which operationalizes the developed ML models. This application features dual-mode operation for researchers and application users, handling audio file uploads, watermark embedding and detection, performance metrics display, and user account management. The system architecture is client-server, with a React frontend and a Python Flask backend.
+
 # Audio Watermark Lab
 
-A summary of the research project can be found at the end of this manual, and the documentation itself is located in /R214568M Dissertation Final.pdf 
+A summary of the research project can be found at the beginning of this manual, and the documentation itself is located in /R214568M Dissertation Final.pdf 
 A comprehensive audio watermarking application with research and application modes, featuring PCA-based watermarking algorithms.
 
 ## Features
@@ -114,15 +124,6 @@ The project consists of two parts:
 
 This project is developed under the University of Zimbabwe, Faculty of Engineering - published under the MIT license.
 
-## Research Summary
-
-The research proposes a novel deep learning-based audio watermarking system to address the increasing need for digital audio traceability in a world where content is constantly recycled and manipulated. The system uses a generator-detector neural network model based on a Parallel Frequency Band (PFB) paradigm, incorporating multiple distinct watermarks concurrently into the audio's frequency domain. A key innovation is the use of learned basis vectors, inspired by Principal Component Analysis (PCA), to establish optimal and separable embedding spaces for each watermark.
-
-The dissertation outlines the methodology, including the algorithm overview for the generator and detector, training pipeline, dataset (Vox Populi), and evaluation metrics such as Bit Error Rate (BER), Signal-to-Noise Ratio (SNR), Mean Squared Error (MSE), and Perceptual Evaluation of Speech Quality (PESQ). The system aims to achieve imperceptibility, robustness, and capacity, even under adversarial distortions like Additive White Gaussian Noise and low-pass filtering.
-
-The feasibility study section covers technical, economic, social, and operational aspects, concluding that the project is feasible due to the availability of open-source software and minimal development costs. The significance and motivation highlight the potential for enhanced copyright protection, content authentication, and contributions to audio cryptography and deep learning research.
-
-The research also details the system analysis and design of the "Audio Watermark Lab" application, which operationalizes the developed ML models. This application features dual-mode operation for researchers and application users, handling audio file uploads, watermark embedding and detection, performance metrics display, and user account management. The system architecture is client-server, with a React frontend and a Python Flask backend.
 
 
 
