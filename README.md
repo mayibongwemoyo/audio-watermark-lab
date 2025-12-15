@@ -122,7 +122,7 @@ The project consists of two parts:
 
 ## License
 
-This project is developed under the University of Zimbabwe, Faculty of Engineering - published under the MIT license.
+This project is developed under the University of Zimbabwe, Faculty of Computer Engineering, Informatics and Communications - published under the MIT license.
 
 
 
