@@ -1,6 +1,6 @@
 # Audio Watermark Lab
 
-Asummary of the research project can be found at the end f this manual, and the documentation itself is located in /R214568M Dissertation Final.pdf 
+A summary of the research project can be found at the end of this manual, and the documentation itself is located in /R214568M Dissertation Final.pdf 
 A comprehensive audio watermarking application with research and application modes, featuring PCA-based watermarking algorithms.
 
 ## Features
